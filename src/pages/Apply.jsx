@@ -18,6 +18,11 @@ const emptyForm = {
   workTelNumber: '',
   employmentStatus: 'EMPLOYED',
   cellVerified: false,
+  addressLatitude: null,
+  addressLongitude: null,
+  addressFormatted: '',
+  addressPlaceId: '',
+  addressVerified: false,
   peopleOnProperty: '',
   childrenUnder18: '',
   adults: '',
@@ -70,6 +75,21 @@ function buildPayload(form, nextStep) {
   if (typeof form.cellVerified === 'boolean') {
     payload.cellVerified = form.cellVerified;
   }
+  if (typeof form.addressVerified === 'boolean') {
+    payload.addressVerified = form.addressVerified;
+  }
+
+  // Address coordinates from Google verification
+  if (form.addressLatitude != null && form.addressLatitude !== '') {
+    const lat = toNum(form.addressLatitude);
+    if (lat !== undefined) payload.addressLatitude = lat;
+  }
+  if (form.addressLongitude != null && form.addressLongitude !== '') {
+    const lng = toNum(form.addressLongitude);
+    if (lng !== undefined) payload.addressLongitude = lng;
+  }
+  if (form.addressFormatted) payload.addressFormatted = form.addressFormatted;
+  if (form.addressPlaceId) payload.addressPlaceId = form.addressPlaceId;
 
   // Integers
   const intFields = ['peopleOnProperty', 'childrenUnder18', 'adults', 'pensionersOver60'];
@@ -110,6 +130,7 @@ export default function Apply() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [verifyingAddress, setVerifyingAddress] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -141,6 +162,11 @@ export default function Apply() {
           workTelNumber: draft.workTelNumber || '',
           employmentStatus: draft.employmentStatus || 'EMPLOYED',
           cellVerified: !!draft.cellVerified,
+          addressLatitude: draft.addressLatitude ?? null,
+          addressLongitude: draft.addressLongitude ?? null,
+          addressFormatted: draft.addressFormatted || '',
+          addressPlaceId: draft.addressPlaceId || '',
+          addressVerified: !!draft.addressVerified,
           peopleOnProperty: draft.peopleOnProperty ?? '',
           childrenUnder18: draft.childrenUnder18 ?? '',
           adults: draft.adults ?? '',
@@ -195,7 +221,59 @@ export default function Apply() {
     }
   };
 
-  const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+  const update = (field, value) => {
+    setForm((f) => {
+      const next = { ...f, [field]: value };
+      // Editing address invalidates previous Google verification
+      if (field === 'residentialAddress' && f.addressVerified) {
+        next.addressVerified = false;
+        next.addressLatitude = null;
+        next.addressLongitude = null;
+        next.addressFormatted = '';
+        next.addressPlaceId = '';
+      }
+      return next;
+    });
+  };
+
+  const verifyAddress = async () => {
+    if (!form.residentialAddress || !form.residentialAddress.trim()) {
+      setError('Please enter a residential address to verify');
+      return;
+    }
+    setVerifyingAddress(true);
+    setError('');
+    setSuccess('');
+    try {
+      const res = await api.post('/geocode', {
+        address: form.residentialAddress.trim(),
+        applicationId: applicationId || undefined,
+      });
+      const data = res.data.data;
+      setForm((f) => ({
+        ...f,
+        residentialAddress: data.formattedAddress || f.residentialAddress,
+        addressLatitude: data.latitude,
+        addressLongitude: data.longitude,
+        addressFormatted: data.formattedAddress || '',
+        addressPlaceId: data.placeId || '',
+        addressVerified: true,
+      }));
+      if (data.application?.id) {
+        setApplicationId(data.application.id);
+      }
+      setSuccess(
+        data.partialMatch
+          ? 'Address found (partial match). Please confirm it looks correct on the map.'
+          : 'Address verified on Google Maps'
+      );
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || 'Could not verify address on Google Maps');
+    } finally {
+      setVerifyingAddress(false);
+    }
+  };
 
   const saveStep = async (nextStep) => {
     if (!applicationId) {
@@ -405,7 +483,50 @@ export default function Apply() {
               </div>
               <div className="form-group">
                 <label>Residential Address</label>
-                <input value={form.residentialAddress} onChange={(e) => update('residentialAddress', e.target.value)} placeholder="Full residential address" />
+                <div className="input-with-btn" style={{ alignItems: 'stretch' }}>
+                  <input
+                    value={form.residentialAddress}
+                    onChange={(e) => update('residentialAddress', e.target.value)}
+                    placeholder="e.g. 864 South St, Montague Gardens, Cape Town"
+                    style={{ flex: 1 }}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={verifyAddress}
+                    disabled={verifyingAddress || !form.residentialAddress?.trim()}
+                    style={{ whiteSpace: 'nowrap', minWidth: '7.5rem' }}
+                  >
+                    {verifyingAddress ? 'Verifying…' : form.addressVerified ? '✓ Verified' : 'Verify on Map'}
+                  </button>
+                </div>
+                {form.addressVerified && form.addressFormatted && (
+                  <p style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: 'var(--gray-600)' }}>
+                    <span className="badge badge-uploaded" style={{ marginRight: '0.4rem' }}>Verified</span>
+                    {form.addressFormatted}
+                  </p>
+                )}
+                {form.addressVerified && form.addressLatitude != null && form.addressLongitude != null && (
+                  <div className="map-preview" style={{ marginTop: '0.75rem' }}>
+                    <iframe
+                      title="Verified address map"
+                      width="100%"
+                      height="220"
+                      style={{ border: 0, borderRadius: '8px' }}
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                      src={`https://www.google.com/maps?q=${form.addressLatitude},${form.addressLongitude}&z=16&output=embed`}
+                    />
+                    <a
+                      href={`https://www.google.com/maps/search/?api=1&query=${form.addressLatitude},${form.addressLongitude}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: 'inline-block', marginTop: '0.4rem', fontSize: '0.85rem' }}
+                    >
+                      Open in Google Maps ↗
+                    </a>
+                  </div>
+                )}
               </div>
               <div className="form-group">
                 <label>Postal Address</label>
