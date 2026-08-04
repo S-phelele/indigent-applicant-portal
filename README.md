@@ -1,4 +1,4 @@
-Indigent Register System
+Indigent Applicant Portal
 
 Tech Stack
 
