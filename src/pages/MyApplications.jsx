@@ -14,6 +14,8 @@ export default function MyApplications() {
       .finally(() => setLoading(false));
   }, []);
 
+  const hasDraft = apps.some((a) => a.status === 'DRAFT');
+
   const statusBadge = (status) => {
     const map = {
       DRAFT: 'badge-draft',
@@ -28,12 +30,29 @@ export default function MyApplications() {
 
   return (
     <div className="app-content" style={{ maxWidth: 960 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '0.75rem' }}>
         <h2 style={{ fontSize: '1.35rem' }}>My Applications</h2>
-        <Link to="/apply" className="btn btn-primary">New Application</Link>
+        {hasDraft ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.35rem' }}>
+            <button type="button" className="btn btn-primary" disabled title="Finish your draft first">
+              New Application
+            </button>
+            <span style={{ fontSize: '0.8rem', color: 'var(--gray-500)' }}>
+              Complete your draft before starting a new application
+            </span>
+          </div>
+        ) : (
+          <Link to="/apply" className="btn btn-primary">New Application</Link>
+        )}
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      {hasDraft && (
+        <div className="alert alert-info" style={{ marginBottom: '1rem' }}>
+          You have a draft in progress. Continue it below — a new application can only be started after this one is submitted.
+        </div>
+      )}
 
       {apps.length === 0 ? (
         <div className="form-card" style={{ textAlign: 'center' }}>
