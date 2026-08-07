@@ -1,22 +1,35 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import Header from '../components/Header';
+import AppLayout from '../components/AppLayout';
 import Stepper from '../components/Stepper';
+import AddressCapture from '../components/AddressCapture';
+import HouseholdEditor from '../components/HouseholdEditor';
 import OtpModal from '../components/OtpModal';
 import api from '../services/api';
+import Icon from '../components/ui/Icon';
+import { useToast } from '../components/ui/Toast';
+import { useAuth } from '../context/AuthContext';
+import { friendlyError } from '../utils/apiError';
 
+// Enum fields start blank on purpose. Defaulting them (e.g. to EMPLOYED) would
+// record an answer the applicant never gave.
 const emptyForm = {
-  maritalStatus: 'SINGLE',
+  maritalStatus: '',
   surname: '',
   names: '',
   idNumber: '',
   cellNumber: '',
   residentialAddress: '',
+  addressLatitude: '',
+  addressLongitude: '',
+  addressFormatted: '',
+  addressSource: '',
+  addressAccuracyM: '',
   postalAddress: '',
   employerName: '',
   employerAddress: '',
   workTelNumber: '',
-  employmentStatus: 'EMPLOYED',
+  employmentStatus: '',
   cellVerified: false,
   peopleOnProperty: '',
   childrenUnder18: '',
@@ -36,6 +49,17 @@ const emptyForm = {
   incomeBelowThreshold: '',
   hasMunicipalArrears: '',
   hasArrearsArrangement: '',
+  wardNumber: '',
+  municipalAccountNumber: '',
+  eskomAccountNumber: '',
+  tenure: '',
+  applicantCategory: 'STANDARD',
+  ownsOtherProperty: '',
+  otherPropertyDetails: '',
+  incomeExclusions: '',
+  consentSiteVisit: false,
+  consentDataMatching: false,
+  declarationTruthful: false,
 };
 
 function toNum(val) {
@@ -59,6 +83,8 @@ function buildPayload(form, nextStep) {
     'maritalStatus', 'surname', 'names', 'idNumber', 'cellNumber',
     'residentialAddress', 'postalAddress', 'employerName', 'employerAddress',
     'workTelNumber', 'employmentStatus', 'waterMeterNumber', 'electricityMeterNumber',
+    'wardNumber', 'municipalAccountNumber', 'eskomAccountNumber',
+    'tenure', 'applicantCategory', 'otherPropertyDetails', 'incomeExclusions',
   ];
   stringFields.forEach((key) => {
     if (form[key] !== '' && form[key] !== null && form[key] !== undefined) {
@@ -69,6 +95,26 @@ function buildPayload(form, nextStep) {
   // Booleans
   if (typeof form.cellVerified === 'boolean') {
     payload.cellVerified = form.cellVerified;
+  }
+
+  // Consent is legally load-bearing, so it is always sent — including when it
+  // has been withdrawn. Omitting a false would leave a stale "yes" on the record.
+  ['consentSiteVisit', 'consentDataMatching', 'declarationTruthful'].forEach((key) => {
+    if (typeof form[key] === 'boolean') payload[key] = form[key];
+  });
+
+  // Coordinates move as a pair, or are cleared as a pair. Sending one alone is
+  // rejected by the API, because half a coordinate locates nothing.
+  const hasPin = form.addressLatitude !== '' && form.addressLongitude !== '';
+  if (hasPin) {
+    payload.addressLatitude = Number(form.addressLatitude);
+    payload.addressLongitude = Number(form.addressLongitude);
+    payload.addressSource = form.addressSource || 'MANUAL';
+    if (form.addressFormatted) payload.addressFormatted = form.addressFormatted;
+    if (form.addressAccuracyM !== '') payload.addressAccuracyM = Number(form.addressAccuracyM);
+  } else if (form.addressLatitude === '' && form.addressLongitude === '') {
+    payload.addressLatitude = null;
+    payload.addressLongitude = null;
   }
 
   // Integers
@@ -91,7 +137,7 @@ function buildPayload(form, nextStep) {
   // Yes/No questions
   const boolFields = [
     'ownsImmovableProperty', 'isFullTimeOccupant', 'incomeBelowThreshold',
-    'hasMunicipalArrears', 'hasArrearsArrangement',
+    'hasMunicipalArrears', 'hasArrearsArrangement', 'ownsOtherProperty',
   ];
   boolFields.forEach((key) => {
     const b = toBool(form[key]);
@@ -112,6 +158,8 @@ export default function Apply() {
   const [loading, setLoading] = useState(false);
   const [initLoading, setInitLoading] = useState(true);
   const navigate = useNavigate();
+  const toast = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
     initApplication();
@@ -129,17 +177,22 @@ export default function Apply() {
         setStep(draft.currentStep || 1);
         setForm({
           ...emptyForm,
-          maritalStatus: draft.maritalStatus || 'SINGLE',
+          maritalStatus: draft.maritalStatus || '',
           surname: draft.surname || '',
           names: draft.names || '',
           idNumber: draft.idNumber || '',
           cellNumber: draft.cellNumber || '',
           residentialAddress: draft.residentialAddress || '',
+          addressLatitude: draft.addressLatitude ?? '',
+          addressLongitude: draft.addressLongitude ?? '',
+          addressFormatted: draft.addressFormatted || '',
+          addressSource: draft.addressSource || '',
+          addressAccuracyM: draft.addressAccuracyM ?? '',
           postalAddress: draft.postalAddress || '',
           employerName: draft.employerName || '',
           employerAddress: draft.employerAddress || '',
           workTelNumber: draft.workTelNumber || '',
-          employmentStatus: draft.employmentStatus || 'EMPLOYED',
+          employmentStatus: draft.employmentStatus || '',
           cellVerified: !!draft.cellVerified,
           peopleOnProperty: draft.peopleOnProperty ?? '',
           childrenUnder18: draft.childrenUnder18 ?? '',
@@ -162,21 +215,17 @@ export default function Apply() {
         });
         setDocuments(draft.documents || []);
       } else {
-        // Create a new draft
-        const create = await api.post('/applications');
-        const app = create.data.data;
-        setApplicationId(app.id);
-        setDocuments(app.documents || []);
-        // Prefill from user profile if available
-        if (app.surname || app.names || app.idNumber || app.cellNumber) {
-          setForm((f) => ({
-            ...f,
-            surname: app.surname || f.surname,
-            names: app.names || f.names,
-            idNumber: app.idNumber || f.idNumber,
-            cellNumber: app.cellNumber || f.cellNumber,
-          }));
-        }
+        // Deliberately does NOT create a draft here. Opening the form used to
+        // consume the applicant's one allowed draft even if they left straight
+        // away, and filled the database with empty rows. The draft is created on
+        // the first save instead — see ensureApplication().
+        setForm((f) => ({
+          ...f,
+          surname: f.surname || user?.lastName || '',
+          names: f.names || user?.firstName || '',
+          idNumber: f.idNumber || user?.idNumber || '',
+          cellNumber: f.cellNumber || user?.cellNumber || '',
+        }));
       }
     } catch (err) {
       console.error('initApplication error:', err);
@@ -197,21 +246,29 @@ export default function Apply() {
 
   const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
 
-  const saveStep = async (nextStep) => {
-    if (!applicationId) {
-      setError('Application not ready. Please refresh the page and try again.');
-      // Attempt to re-init
-      await initApplication();
-      return;
-    }
+  /**
+   * Return the application id, creating the draft the first time it is needed.
+   * Everything that writes goes through here, so a draft only ever exists once
+   * the applicant has actually entered something.
+   */
+  const ensureApplication = async () => {
+    if (applicationId) return applicationId;
+    const res = await api.post('/applications');
+    const app = res.data.data;
+    setApplicationId(app.id);
+    setDocuments(app.documents || []);
+    return app.id;
+  };
 
+  const saveStep = async (nextStep) => {
     setLoading(true);
     setError('');
     setSuccess('');
 
     try {
+      const id = await ensureApplication();
       const payload = buildPayload(form, nextStep);
-      const res = await api.patch(`/applications/${applicationId}`, payload);
+      const res = await api.patch(`/applications/${id}`, payload);
 
       // Sync calculated fields from server
       const updated = res.data.data;
@@ -261,63 +318,75 @@ export default function Apply() {
       }
       setShowOtp(true);
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to send OTP');
+      setError(friendlyError(err, 'Failed to send OTP'));
     }
   };
 
   const verifyOtp = async (code) => {
     await api.post('/auth/verify-otp', { cellNumber: form.cellNumber, code });
     update('cellVerified', true);
-    // Persist verification on the application
-    if (applicationId) {
+    // Persist verification on the application. If this fails the UI must not claim
+    // the number is verified when the database says otherwise.
+    {
       try {
-        await api.patch(`/applications/${applicationId}`, { cellVerified: true, cellNumber: form.cellNumber });
-      } catch (_) {}
+        const id = await ensureApplication();
+        await api.patch(`/applications/${id}`, { cellVerified: true, cellNumber: form.cellNumber });
+      } catch (err) {
+        update('cellVerified', false);
+        setShowOtp(false);
+        setError(
+          friendlyError(err, 'Code accepted, but we could not save the verification. Please try again.')
+        );
+        return;
+      }
     }
     setShowOtp(false);
-    setSuccess('Cell number verified successfully');
+    toast.success('Cell number verified', 'You can carry on with your application.');
   };
 
   const handleUpload = async (docId, file) => {
-    if (!file || !applicationId) return;
+    if (!file) return;
+    const appId = await ensureApplication();
     const fd = new FormData();
     fd.append('file', file);
     fd.append('documentId', docId);
     setError('');
     try {
-      const res = await api.post(`/documents/${applicationId}/upload`, fd, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      // Content-Type is intentionally unset so the browser generates the multipart
+      // boundary. Also keeps the api.js instance free of a JSON default, which would
+      // otherwise serialise this FormData to JSON and drop the file.
+      const res = await api.post(`/documents/${appId}/upload`, fd);
       setDocuments((docs) =>
         docs.map((d) => (d.id === docId ? res.data.data : d))
       );
-      setSuccess('Document uploaded');
+      toast.success('Document uploaded', res.data.data?.name || file.name);
     } catch (err) {
-      setError(err.response?.data?.message || 'Upload failed');
+      toast.error('Upload failed', friendlyError(err, 'Check the file type and size, then try again.'));
     }
   };
 
   const handleSubmit = async () => {
-    if (!applicationId) {
-      setError('Application not ready. Please refresh and try again.');
-      return;
-    }
     setLoading(true);
     setError('');
     setSuccess('');
     try {
       // Save current step data first
-      await api.patch(`/applications/${applicationId}`, buildPayload(form, 5));
-      await api.post(`/applications/${applicationId}/submit`);
-      setSuccess('Application submitted successfully!');
-      setTimeout(() => navigate('/my-applications'), 1500);
+      const id = await ensureApplication();
+      await api.patch(`/applications/${id}`, buildPayload(form, 5));
+      await api.post(`/applications/${id}/submit`);
+      toast.success('Application submitted', 'A municipal official will review it within 14 days.');
+      setTimeout(() => navigate('/my-applications'), 1200);
     } catch (err) {
       console.error('submit error:', err);
-      let msg = err.response?.data?.message || 'Submit failed';
-      if (err.response?.data?.missing) {
-        msg = `Missing required documents: ${err.response.data.missing.join(', ')}`;
+      const missing = err.response?.data?.missing;
+      if (missing?.length) {
+        setError(`Still outstanding: ${missing.join(', ')}. Upload these before submitting.`);
+        toast.error('Cannot submit yet', `${missing.length} required document(s) are missing.`);
+      } else {
+        const msg = friendlyError(err, 'We could not submit your application.');
+        setError(msg);
+        toast.error('Submit failed', msg);
       }
-      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -325,23 +394,21 @@ export default function Apply() {
 
   if (initLoading) {
     return (
-      <div className="app-page">
-        <Header />
-        <div className="loading">Loading application...</div>
-      </div>
+      <AppLayout title="Application form">
+        <div className="loading"><span className="spinner" /> Loading your application…</div>
+      </AppLayout>
     );
   }
 
   return (
-    <div className="app-page">
-      <Header />
-      <div className="app-content">
+    <AppLayout title="Application form">
+      <div>
         <button
           type="button"
           className="back-link"
           onClick={() => (step > 1 ? setStep(step - 1) : navigate('/my-applications'))}
         >
-          ← Back
+          <Icon name="arrow-left" size={15} /> Back
         </button>
 
         <Stepper current={step} />
@@ -371,6 +438,7 @@ export default function Apply() {
               <div className="form-group">
                 <label>Marital Status</label>
                 <select value={form.maritalStatus} onChange={(e) => update('maritalStatus', e.target.value)}>
+                  <option value="">Select...</option>
                   <option value="SINGLE">Single</option>
                   <option value="MARRIED">Married</option>
                   <option value="DIVORCED">Divorced</option>
@@ -398,15 +466,36 @@ export default function Apply() {
                   <div className="input-with-btn">
                     <input value={form.cellNumber} onChange={(e) => update('cellNumber', e.target.value)} placeholder="081 591 2000" />
                     <button type="button" className="btn btn-primary btn-sm" onClick={sendOtp}>
-                      {form.cellVerified ? '✓ Verified' : 'Send OTP'}
+                      {form.cellVerified ? <><Icon name="check" size={14} /> Verified</> : 'Send OTP'}
                     </button>
                   </div>
                 </div>
               </div>
-              <div className="form-group">
-                <label>Residential Address</label>
-                <input value={form.residentialAddress} onChange={(e) => update('residentialAddress', e.target.value)} placeholder="Full residential address" />
-              </div>
+              <AddressCapture
+                address={form.residentialAddress}
+                onAddressChange={(v) => update('residentialAddress', v)}
+                coordinates={
+                  form.addressLatitude !== '' && form.addressLongitude !== ''
+                    ? {
+                        latitude: form.addressLatitude,
+                        longitude: form.addressLongitude,
+                        formatted: form.addressFormatted,
+                        source: form.addressSource,
+                        accuracyM: form.addressAccuracyM,
+                      }
+                    : null
+                }
+                onCoordinatesChange={(c) =>
+                  setForm((f) => ({
+                    ...f,
+                    addressLatitude: c?.latitude ?? '',
+                    addressLongitude: c?.longitude ?? '',
+                    addressFormatted: c?.formatted ?? '',
+                    addressSource: c?.source ?? '',
+                    addressAccuracyM: c?.accuracyM ?? '',
+                  }))
+                }
+              />
               <div className="form-group">
                 <label>Postal Address</label>
                 <input value={form.postalAddress} onChange={(e) => update('postalAddress', e.target.value)} placeholder="Postal address" />
@@ -426,6 +515,7 @@ export default function Apply() {
               <div className="form-group">
                 <label>Employment Status</label>
                 <select value={form.employmentStatus} onChange={(e) => update('employmentStatus', e.target.value)}>
+                  <option value="">Select...</option>
                   <option value="EMPLOYED">Employed</option>
                   <option value="UNEMPLOYED">Unemployed</option>
                   <option value="SELF_EMPLOYED">Self-employed</option>
@@ -435,7 +525,7 @@ export default function Apply() {
               </div>
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => navigate('/my-applications')}>Cancel</button>
-                <button type="button" className="btn btn-primary" onClick={() => saveStep(2)} disabled={loading || !applicationId}>
+                <button type="button" className="btn btn-primary" onClick={() => saveStep(2)} disabled={loading}>
                   {loading ? 'Saving...' : 'Next'}
                 </button>
               </div>
@@ -446,29 +536,95 @@ export default function Apply() {
           {step === 2 && (
             <>
               <h2 className="form-section-title">Property Particulars</h2>
+
               <div className="form-group">
-                <label>Number of people living on property</label>
-                <input type="number" min="0" value={form.peopleOnProperty} onChange={(e) => update('peopleOnProperty', e.target.value)} />
+                <label>Do you own or rent this property?</label>
+                <select value={form.tenure} onChange={(e) => update('tenure', e.target.value)}>
+                  <option value="">Please choose</option>
+                  <option value="OWNER">I own it</option>
+                  <option value="TENANT">I rent it</option>
+                  <option value="OCCUPIER">I live here but neither own nor rent (e.g. family land)</option>
+                </select>
+                <p className="field-hint">
+                  {form.tenure === 'TENANT'
+                    ? 'As a tenant you can be helped with the service charges you are billed for, but not with rates — those belong to the owner.'
+                    : 'This decides which proof we ask you for, so please answer it before uploading documents.'}
+                </p>
               </div>
+
               <div className="form-group">
-                <label>Children (Under 18)</label>
-                <input type="number" min="0" value={form.childrenUnder18} onChange={(e) => update('childrenUnder18', e.target.value)} />
+                <label>Does anything below describe your household?</label>
+                <select value={form.applicantCategory} onChange={(e) => update('applicantCategory', e.target.value)}>
+                  <option value="STANDARD">None of these</option>
+                  <option value="PENSIONER">I am a pensioner</option>
+                  <option value="DISABLED">I have a disability</option>
+                  <option value="DECEASED_ESTATE">The owner has died and I am dealing with the estate</option>
+                  <option value="CHILD_HEADED">This household is headed by a young person under 21</option>
+                </select>
+                <p className="field-hint">Choosing one adds only the documents that case needs. Nothing else changes.</p>
               </div>
-              <div className="form-group">
-                <label>Adults</label>
-                <input type="number" min="0" value={form.adults} onChange={(e) => update('adults', e.target.value)} />
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Municipal account number</label>
+                  <input value={form.municipalAccountNumber} onChange={(e) => update('municipalAccountNumber', e.target.value)} />
+                  <p className="field-hint">From your latest municipal bill. Relief is applied to this account.</p>
+                </div>
+                <div className="form-group">
+                  <label>Eskom account number <span className="optional-tag">optional</span></label>
+                  <input value={form.eskomAccountNumber} onChange={(e) => update('eskomAccountNumber', e.target.value)} />
+                  <p className="field-hint">Only if Eskom bills you for electricity directly.</p>
+                </div>
               </div>
-              <div className="form-group">
-                <label>Pensioners over 60</label>
-                <input type="number" min="0" value={form.pensionersOver60} onChange={(e) => update('pensionersOver60', e.target.value)} />
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Ward number <span className="optional-tag">optional</span></label>
+                  <input value={form.wardNumber} onChange={(e) => update('wardNumber', e.target.value)} placeholder="e.g. Ward 12" />
+                </div>
+                <div className="form-group">
+                  <label>Water Meter Number</label>
+                  <input value={form.waterMeterNumber} onChange={(e) => update('waterMeterNumber', e.target.value)} />
+                </div>
               </div>
-              <div className="form-group">
-                <label>Water Meter Number</label>
-                <input value={form.waterMeterNumber} onChange={(e) => update('waterMeterNumber', e.target.value)} />
-              </div>
+
               <div className="form-group">
                 <label>Electricity Meter Number</label>
                 <input value={form.electricityMeterNumber} onChange={(e) => update('electricityMeterNumber', e.target.value)} />
+              </div>
+
+              <h2 className="form-section-title">Who lives here</h2>
+              <HouseholdEditor
+                applicationId={applicationId}
+                onChange={(app) => setForm((f) => ({
+                  ...f,
+                  peopleOnProperty: app.peopleOnProperty ?? f.peopleOnProperty,
+                  childrenUnder18: app.childrenUnder18 ?? f.childrenUnder18,
+                  adults: app.adults ?? f.adults,
+                  pensionersOver60: app.pensionersOver60 ?? f.pensionersOver60,
+                }))}
+              />
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Total people on the property</label>
+                  <input type="number" min="0" value={form.peopleOnProperty} onChange={(e) => update('peopleOnProperty', e.target.value)} />
+                  <p className="field-hint">Counted from the list above, including you. You can correct it if needed.</p>
+                </div>
+                <div className="form-group">
+                  <label>Children under 18</label>
+                  <input type="number" min="0" value={form.childrenUnder18} onChange={(e) => update('childrenUnder18', e.target.value)} />
+                </div>
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Adults</label>
+                  <input type="number" min="0" value={form.adults} onChange={(e) => update('adults', e.target.value)} />
+                </div>
+                <div className="form-group">
+                  <label>Pensioners over 60</label>
+                  <input type="number" min="0" value={form.pensionersOver60} onChange={(e) => update('pensionersOver60', e.target.value)} />
+                </div>
               </div>
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setStep(1)}>Back</button>
@@ -503,19 +659,57 @@ export default function Apply() {
                 <label>Renting Part of House</label>
                 <input type="number" step="0.01" min="0" value={form.rentingIncome} onChange={(e) => update('rentingIncome', e.target.value)} placeholder="R 0.00" />
               </div>
-              <div className="form-group">
-                <label>Total Income per Person (auto-calculated on save)</label>
-                <input
-                  type="text"
-                  value={
-                    form.totalIncomePerPerson !== '' && form.totalIncomePerPerson != null
-                      ? `R ${Number(form.totalIncomePerPerson).toFixed(2)}`
-                      : ''
-                  }
-                  readOnly
-                  placeholder="Calculated after you click Next"
-                />
-              </div>
+              {/* The household total is the figure the qualifying threshold is
+                  assessed against, so it is shown live rather than only after a
+                  save — an applicant should never answer step 4's threshold
+                  question without seeing the number it refers to. */}
+              {(() => {
+                const total = ['salary', 'oldAgePension', 'disabilityPension', 'businessIncome', 'rentingIncome']
+                  .reduce((sum, k) => sum + (Number(form[k]) || 0), 0);
+                const people = Number(form.peopleOnProperty) || 0;
+                const perPerson = people > 0 ? total / people : null;
+                const anyEntered = ['salary', 'oldAgePension', 'disabilityPension', 'businessIncome', 'rentingIncome']
+                  .some((k) => form[k] !== '' && form[k] != null);
+                const money = (v) => `R ${Number(v).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`;
+
+                if (!anyEntered) return null;
+                return (
+                  <div
+                    style={{
+                      marginTop: '1.25rem', padding: '1rem',
+                      background: 'var(--gray-50)', border: '1px solid var(--gray-200)',
+                      borderRadius: 'var(--radius)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '1rem' }}>
+                      <span style={{ fontWeight: 600 }}>Total household income</span>
+                      <span style={{ fontSize: '1.25rem', fontWeight: 650 }}>{money(total)}</span>
+                    </div>
+                    {perPerson !== null && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '.35rem', fontSize: '.875rem', color: 'var(--gray-500)' }}>
+                        <span>Per person across {people} {people === 1 ? 'person' : 'people'}</span>
+                        <span>{money(perPerson)}</span>
+                      </div>
+                    )}
+                    <div style={{ marginTop: '.75rem', paddingTop: '.75rem', borderTop: '1px solid var(--gray-200)', fontSize: '.8125rem' }}>
+                      {total <= 4200 ? (
+                        <span style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '.4rem' }}>
+                          <Icon name="check-circle" size={15} />
+                          This is at or below the R4 200 monthly threshold.
+                        </span>
+                      ) : (
+                        <span style={{ color: 'var(--warning)', display: 'inline-flex', alignItems: 'flex-start', gap: '.4rem' }}>
+                          <Icon name="alert-triangle" size={15} style={{ marginTop: '.1rem' }} />
+                          <span>
+                            This is above the R4 200 monthly threshold. You may still apply — an official
+                            will assess your circumstances.
+                          </span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setStep(2)}>Back</button>
                 <button type="button" className="btn btn-primary" onClick={() => saveStep(4)} disabled={loading}>
@@ -545,6 +739,82 @@ export default function Apply() {
                   </select>
                 </div>
               ))}
+              <div className="form-group">
+                <label>Do you own any other property anywhere in South Africa?</label>
+                <select value={form.ownsOtherProperty} onChange={(e) => update('ownsOtherProperty', e.target.value)}>
+                  <option value="">Select...</option>
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+                <p className="field-hint">
+                  Saying yes does not automatically disqualify you — an inherited plot with no services is not
+                  wealth. But it must be declared.
+                </p>
+              </div>
+
+              {form.ownsOtherProperty === 'Yes' ? (
+                <div className="form-group">
+                  <label>Where is it, and what is it?</label>
+                  <textarea
+                    rows={2}
+                    value={form.otherPropertyDetails}
+                    onChange={(e) => update('otherPropertyDetails', e.target.value)}
+                    placeholder="e.g. An empty inherited plot in Lusikisiki, Eastern Cape"
+                  />
+                </div>
+              ) : null}
+
+              <div className="form-group">
+                <label>
+                  Money coming in that you think should not count <span className="optional-tag">optional</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={form.incomeExclusions}
+                  onChange={(e) => update('incomeExclusions', e.target.value)}
+                  placeholder="e.g. Child support grant for two children, NSFAS allowance, money my sister sends some months"
+                />
+                <p className="field-hint">
+                  Child support grants, NSFAS, informal help from family and once-off lump sums are usually excluded.
+                  Tell us about them here so they are not counted against you.
+                </p>
+              </div>
+
+              <h2 className="form-section-title">Your permission and declaration</h2>
+              <p className="field-hint" style={{ marginBottom: '1rem' }}>
+                We cannot check your application without these. They are legal requirements, not preferences.
+              </p>
+
+              {[
+                {
+                  key: 'consentSiteVisit',
+                  label: 'I agree that a municipal officer may visit and inspect my property.',
+                  hint: 'We will try three times. You will be sent an SMS each time we cannot reach you.',
+                },
+                {
+                  key: 'consentDataMatching',
+                  label: 'I agree that the municipality may check my details with SARS, UIF, SASSA and credit bureaux.',
+                  hint: 'Used only to confirm what you have declared, and only for this application.',
+                },
+                {
+                  key: 'declarationTruthful',
+                  label: 'I declare that everything in this application is true and complete.',
+                  hint: 'You will sign this under oath on your affidavit. Giving false information is an offence.',
+                },
+              ].map((c) => (
+                <div className="form-group consent-check" key={c.key}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(form[c.key])}
+                      onChange={(e) => update(c.key, e.target.checked)}
+                    />
+                    <span>{c.label}</span>
+                  </label>
+                  <p className="field-hint">{c.hint}</p>
+                </div>
+              ))}
+
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setStep(3)}>Back</button>
                 <button type="button" className="btn btn-primary" onClick={() => saveStep(5)} disabled={loading}>
@@ -562,6 +832,38 @@ export default function Apply() {
                 Upload the required supporting documents. Accepted formats: PDF, JPG, PNG, DOC, DOCX (max 10 MB).
               </p>
 
+              {(() => {
+                /**
+                 * Evidence of what the household lives on.
+                 *
+                 * Three documents, any ONE of which is enough: a payslip, a SASSA
+                 * grant letter, or bank statements. Presenting them as three
+                 * separate required rows is what made people give up — roughly a
+                 * fifth of South African adults have no bank account, and being
+                 * shown a red "Required" beside Bank Statements reads as a door
+                 * closing. So the group is drawn as one obligation with a choice
+                 * inside it.
+                 */
+                const group = documents.filter((d) => d.requirementGroup === 'financial_evidence');
+                if (group.length === 0) return null;
+                const satisfied = group.some((d) => d.status === 'Uploaded');
+                return (
+                  <div className={`evidence-group${satisfied ? ' satisfied' : ''}`}>
+                    <div className="evidence-head">
+                      <Icon name={satisfied ? 'check' : 'info'} size={17} />
+                      <div>
+                        <strong>Proof of what your household lives on</strong>
+                        <p>
+                          {satisfied
+                            ? 'Thank you — you have given us what we need here. You do not need to add the others.'
+                            : 'Send us whichever ONE of these you have. You do not need all three, and you do not need a bank account.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {documents.length === 0 ? (
                 <p style={{ textAlign: 'center', color: 'var(--gray-400)', padding: '1.5rem 0' }}>
                   No document slots found. Try refreshing the page.
@@ -574,8 +876,20 @@ export default function Apply() {
                         <div className="doc-row-title">{doc.name}</div>
                         <div className="doc-row-meta">
                           <span>{doc.type}</span>
-                          <span className={`badge ${doc.importance === 'REQUIRED' ? 'badge-required' : 'badge-optional'}`}>
-                            {doc.importance === 'REQUIRED' ? 'Required' : 'Optional'}
+                          <span
+                            className={`badge ${
+                              doc.requirementGroup
+                                ? 'badge-choice'
+                                : doc.importance === 'REQUIRED'
+                                  ? 'badge-required'
+                                  : 'badge-optional'
+                            }`}
+                          >
+                            {doc.requirementGroup
+                              ? 'One of these'
+                              : doc.importance === 'REQUIRED'
+                                ? 'Required'
+                                : 'Optional'}
                           </span>
                           <span className={`badge ${doc.status === 'Uploaded' ? 'badge-uploaded' : 'badge-pending'}`}>
                             {doc.status}
@@ -588,7 +902,7 @@ export default function Apply() {
                       <div className="doc-row-actions">
                         {doc.status !== 'Uploaded' ? (
                           <label className="btn btn-primary btn-sm" style={{ cursor: 'pointer' }}>
-                            ↑ Upload
+                            <Icon name="upload" size={14} /> Upload
                             <input
                               type="file"
                               hidden
@@ -639,7 +953,6 @@ export default function Apply() {
         />
       )}
 
-      <footer className="footer">Terms & Conditions © 2024. All rights reserved.</footer>
-    </div>
+    </AppLayout>
   );
 }

@@ -1,5 +1,21 @@
 import { Link } from 'react-router-dom';
 import Header from '../components/Header';
+import Icon from '../components/ui/Icon';
+
+const CARDS = [
+  { icon: 'edit', title: 'Complete Form', body: 'Fill in your personal, property, household income and general details.' },
+  { icon: 'file', title: 'Upload Documents', body: 'Upload required supporting documents (ID, bank statements, affidavit).' },
+  { icon: 'bell', title: 'Get Notification', body: 'You will be notified once your application has been reviewed.' },
+  { icon: 'user', title: 'Get Support', body: 'If approved, discounts will be applied to your municipal account.' },
+];
+
+const FAQS = [
+  'Who qualifies for indigent support?',
+  'What documents do I need?',
+  'How long does the process take?',
+  'Can I re-apply if declined?',
+  'How is household income calculated?',
+];
 
 export default function Landing() {
   return (
@@ -26,43 +42,23 @@ export default function Landing() {
       <section className="section" style={{ background: 'white' }}>
         <h2>How does it work?</h2>
         <div className="cards-grid">
-          <div className="info-card">
-            <div className="icon">✏️</div>
-            <h3>Complete Form</h3>
-            <p>Fill in your personal, property, household income and general details.</p>
-            <Link to="/register">Get started →</Link>
-          </div>
-          <div className="info-card">
-            <div className="icon">📄</div>
-            <h3>Upload Documents</h3>
-            <p>Upload required supporting documents (ID, bank statements, affidavit).</p>
-            <Link to="/register">Get started →</Link>
-          </div>
-          <div className="info-card">
-            <div className="icon">🔔</div>
-            <h3>Get Notification</h3>
-            <p>You will be notified once your application has been reviewed.</p>
-            <Link to="/register">Get started →</Link>
-          </div>
-          <div className="info-card">
-            <div className="icon">👤</div>
-            <h3>Get Support</h3>
-            <p>If approved, discounts will be applied to your municipal account.</p>
-            <Link to="/register">Get started →</Link>
-          </div>
+          {CARDS.map((c) => (
+            <div className="info-card" key={c.title}>
+              <div className="info-card-step" aria-hidden="true">
+                <Icon name={c.icon} size={17} />
+              </div>
+              <h3>{c.title}</h3>
+              <p>{c.body}</p>
+              <Link to="/register">Get started</Link>
+            </div>
+          ))}
         </div>
       </section>
 
       <section className="section" style={{ background: '#1e293b', color: 'white' }}>
         <h2 style={{ color: 'white' }}>Frequently Asked Questions</h2>
         <div style={{ maxWidth: 600, margin: '0 auto' }}>
-          {[
-            'Who qualifies for indigent support?',
-            'What documents do I need?',
-            'How long does the process take?',
-            'Can I re-apply if declined?',
-            'How is household income calculated?',
-          ].map((q) => (
+          {FAQS.map((q) => (
             <div
               key={q}
               style={{
@@ -70,17 +66,19 @@ export default function Landing() {
                 padding: '1rem 0',
                 display: 'flex',
                 justifyContent: 'space-between',
+                alignItems: 'center',
+                gap: '1rem',
                 cursor: 'pointer',
               }}
             >
               <span>{q}</span>
-              <span>▾</span>
+              <Icon name="chevron-down" size={16} />
             </div>
           ))}
         </div>
       </section>
 
-      <footer className="footer">Terms & Conditions © 2024. All rights reserved.</footer>
+      <footer className="footer">Terms &amp; Conditions © 2024. All rights reserved.</footer>
     </div>
   );
 }

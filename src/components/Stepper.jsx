@@ -1,3 +1,5 @@
+import Icon from './ui/Icon';
+
 const STEPS = [
   { num: 1, label: 'Applicant' },
   { num: 2, label: 'Property' },
@@ -8,16 +10,23 @@ const STEPS = [
 
 export default function Stepper({ current }) {
   return (
-    <div className="stepper">
-      {STEPS.map((s) => (
-        <div
-          key={s.num}
-          className={`step ${current === s.num ? 'active' : ''} ${current > s.num ? 'completed' : ''}`}
-        >
-          <div className="step-circle">{s.num}</div>
-          <div className="step-label">{s.label}</div>
-        </div>
-      ))}
-    </div>
+    <nav className="stepper" aria-label={`Application progress, step ${current} of ${STEPS.length}`}>
+      {STEPS.map((s) => {
+        const done = current > s.num;
+        const active = current === s.num;
+        return (
+          <div
+            key={s.num}
+            className={`step${active ? ' active' : ''}${done ? ' completed' : ''}`}
+            aria-current={active ? 'step' : undefined}
+          >
+            <div className="step-circle">
+              {done ? <Icon name="check" size={15} strokeWidth={2.5} /> : s.num}
+            </div>
+            <div className="step-label">{s.label}</div>
+          </div>
+        );
+      })}
+    </nav>
   );
 }

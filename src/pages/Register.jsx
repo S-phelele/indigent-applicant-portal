@@ -2,6 +2,9 @@ import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import Header from '../components/Header';
+import Icon from '../components/ui/Icon';
+import { useToast } from '../components/ui/Toast';
+import { friendlyError } from '../utils/apiError';
 
 function getPasswordRules(password) {
   return {
@@ -33,6 +36,7 @@ export default function Register() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const rules = useMemo(() => getPasswordRules(form.password), [form.password]);
   const passwordsMatch = form.password === form.confirmPassword;
@@ -57,32 +61,58 @@ export default function Register() {
     setLoading(true);
     try {
       const { confirmPassword, ...payload } = form;
-      await register(payload);
-      navigate('/apply');
+      const user = await register(payload);
+      toast.success('Account created', `Welcome, ${user.firstName || 'there'}. Let's start your application.`);
+      navigate('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.message || 'Registration failed');
+      setError(friendlyError(err, 'Registration failed'));
     } finally {
       setLoading(false);
     }
   };
 
   const RuleItem = ({ ok, label }) => (
-    <li style={{ color: ok ? '#047857' : 'var(--gray-500)', fontSize: '0.85rem', marginBottom: '0.25rem' }}>
-      {ok ? '✓' : '○'} {label}
+    <li className={`req-item${ok ? ' met' : ''}`}>
+      <Icon name={ok ? 'check-circle' : 'circle'} size={14} />
+      <span>{label}</span>
     </li>
   );
 
   return (
-    <div>
+    <div className="app-page">
       <Header />
-      <div className="login-page" style={{ minHeight: 'calc(100vh - 64px)' }}>
-        <div className="login-brand">
-          <h1>Welcome to the Indigent Register Portal</h1>
-        </div>
-        <div className="login-form-wrap">
+      <div className="login-page" style={{ minHeight: 'auto', flex: 1 }}>
+        <aside className="login-brand">
+          <h2>Apply for indigent support</h2>
+          <p>
+            Create an account to start your application. Your progress is saved automatically, so you can
+            come back and finish it later.
+          </p>
+          <div className="login-brand-points">
+            <div className="login-brand-point">
+              <Icon name="check" size={15} />
+              <span>Takes about ten minutes</span>
+            </div>
+            <div className="login-brand-point">
+              <Icon name="check" size={15} />
+              <span>Upload documents from your phone</span>
+            </div>
+            <div className="login-brand-point">
+              <Icon name="check" size={15} />
+              <span>Reviewed within 14 days</span>
+            </div>
+          </div>
+        </aside>
+        <main className="login-form-wrap">
           <div className="login-card">
-            <h2>Create your account</h2>
-            {error && <div className="alert alert-error">{error}</div>}
+            <h1>Create your account</h1>
+            <p>You will need your ID number and a cell number we can verify.</p>
+            {error && (
+              <div className="alert alert-error" role="alert">
+                <Icon name="alert-circle" size={16} />
+                <span>{error}</span>
+              </div>
+            )}
             <form onSubmit={handleSubmit}>
               <div className="form-row">
                 <div className="form-group">
@@ -125,11 +155,11 @@ export default function Register() {
                     aria-label={showPassword ? 'Hide password' : 'Show password'}
                     title={showPassword ? 'Hide password' : 'Show password'}
                   >
-                    {showPassword ? '🙈' : '👁'}
+                    <Icon name={showPassword ? 'eye-off' : 'eye'} size={16} />
                   </button>
                 </div>
                 {(showRules || form.password) && (
-                  <ul style={{ listStyle: 'none', marginTop: '0.5rem', padding: 0 }}>
+                  <ul className="req-list">
                     <RuleItem ok={rules.minLength} label="At least 8 characters" />
                     <RuleItem ok={rules.hasUpper} label="At least one capital letter (A–Z)" />
                     <RuleItem ok={rules.hasLower} label="At least one small letter (a–z)" />
@@ -155,7 +185,7 @@ export default function Register() {
                     aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
                     title={showConfirmPassword ? 'Hide password' : 'Show password'}
                   >
-                    {showConfirmPassword ? '🙈' : '👁'}
+                    <Icon name={showConfirmPassword ? 'eye-off' : 'eye'} size={16} />
                   </button>
                 </div>
                 {form.confirmPassword && !passwordsMatch && (
@@ -165,27 +195,23 @@ export default function Register() {
                 )}
                 {form.confirmPassword && passwordsMatch && form.password && (
                   <p style={{ color: '#047857', fontSize: '0.85rem', marginTop: '0.35rem' }}>
-                    ✓ Passwords match
+                    Passwords match
                   </p>
                 )}
               </div>
               <button
                 type="submit"
-                className="btn btn-primary"
-                style={{ width: '100%' }}
+                className="btn btn-primary btn-block btn-lg"
                 disabled={loading || !isPasswordValid(rules) || !passwordsMatch}
               >
-                {loading ? 'Creating account...' : 'Register & Apply'}
+                {loading ? 'Creating account…' : 'Create account and apply'}
               </button>
             </form>
-            <p style={{ textAlign: 'center', marginTop: '1rem', fontSize: '0.9rem' }}>
-              <Link to="/login">Already have an account? Sign in</Link>
-            </p>
-            <p style={{ textAlign: 'center', marginTop: '0.5rem', fontSize: '0.85rem' }}>
-              <Link to="/">← Back to home</Link>
+            <p className="login-foot">
+              Already have an account? <Link to="/login">Sign in</Link>
             </p>
           </div>
-        </div>
+        </main>
       </div>
     </div>
   );
