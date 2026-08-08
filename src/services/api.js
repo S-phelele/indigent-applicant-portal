@@ -50,10 +50,32 @@ api.interceptors.response.use(
     if (status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
+      /**
+       * Carry the reason through to the sign-in screen.
+       *
+       * Being dropped onto a login box with no explanation reads as the site
+       * having broken, and the usual response is to try the same thing again.
+       * A timeout is routine; a revoked session means the password was changed
+       * somewhere else; an invalid token is a bug or tampering.
+       */
+      sessionStorage.setItem(
+        'signout_reason',
+        code === 'SESSION_EXPIRED' ? 'expired' : code === 'SESSION_REVOKED' ? 'revoked' : 'ended'
+      );
+
       const path = window.location.pathname;
       if (!path.includes('/login') && !path.includes('/register')) {
         window.location.href = '/login';
       }
+      return Promise.reject(err);
+    }
+
+    // A lock applied while somebody was already signed in takes effect at once.
+    if (status === 423 && code === 'ACCOUNT_LOCKED') {
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      sessionStorage.setItem('signout_reason', 'locked');
+      if (!window.location.pathname.includes('/login')) window.location.href = '/login';
       return Promise.reject(err);
     }
 

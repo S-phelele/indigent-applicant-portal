@@ -59,12 +59,24 @@ function Inner() {
     }
     setPwSaving(true);
     try {
-      await api.post('/auth/change-password', {
+      const res = await api.post('/auth/change-password', {
         currentPassword: pw.currentPassword,
         newPassword: pw.newPassword,
       });
+
+      /**
+       * Swap in the replacement token before anything else runs.
+       *
+       * Changing a password ends every session opened with the old one, including
+       * this one. Without this the next request would sign the person out of the
+       * change they just made.
+       */
+      if (res.data?.data?.token) {
+        localStorage.setItem('token', res.data.data.token);
+      }
+
       setPw({ currentPassword: '', newPassword: '', confirmPassword: '' });
-      toast.success('Password changed', 'Use your new password next time you sign in.');
+      toast.success('Password changed', 'Any other phone or computer signed in as you has been signed out.');
     } catch (err) {
       const msg = friendlyError(err, 'We could not change your password.');
       setPwError(msg);

@@ -8,12 +8,57 @@ import { friendlyError } from '../utils/apiError';
 
 const ADMIN_PORTAL_URL = import.meta.env.VITE_ADMIN_PORTAL_URL || 'http://localhost:5174';
 
+/**
+ * Why the previous session ended.
+ *
+ * Written by the API client or the idle timer just before redirecting here.
+ * Wording is aimed at a household rather than an official: no mention of tokens,
+ * sessions expiring or security policy, just what happened and what to do.
+ */
+const SIGNOUT_REASONS = {
+  idle: {
+    tone: 'alert-info',
+    icon: 'clock',
+    text: 'We signed you out because the page was left alone for a while. This keeps your details safe if '
+      + 'you are on a shared or public computer. Everything you had filled in has been saved.',
+  },
+  expired: {
+    tone: 'alert-info',
+    icon: 'clock',
+    text: 'You were signed out after a while. Sign in again to carry on — your application has been saved.',
+  },
+  revoked: {
+    tone: 'alert-info',
+    icon: 'info',
+    text: 'Your password was changed, so you were signed out everywhere else. Sign in with your new password.',
+  },
+  locked: {
+    tone: 'alert-error',
+    icon: 'alert-triangle',
+    text: 'This account is locked because the password was entered incorrectly too many times. '
+      + 'Please wait a few minutes and try again, or reset your password.',
+  },
+  ended: {
+    tone: 'alert-info',
+    icon: 'info',
+    text: 'You have been signed out. Please sign in again.',
+  },
+};
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Read once and cleared, so it does not reappear every time somebody returns
+  // to this screen long after it stopped being true.
+  const [signedOutBecause] = useState(() => {
+    const reason = sessionStorage.getItem('signout_reason');
+    sessionStorage.removeItem('signout_reason');
+    return reason ? SIGNOUT_REASONS[reason] || null : null;
+  });
   const { login } = useAuth();
   const navigate = useNavigate();
   const toast = useToast();
@@ -68,6 +113,15 @@ export default function Login() {
           <div className="login-card">
             <h1>Sign in</h1>
             <p>Enter the email address you registered with.</p>
+
+            {/* Hidden once they have tried again, so the older notice does not sit
+                above a fresh error and confuse which one is current. */}
+            {signedOutBecause && !error ? (
+              <div className={`alert ${signedOutBecause.tone}`} role="status">
+                <Icon name={signedOutBecause.icon} size={16} />
+                <span>{signedOutBecause.text}</span>
+              </div>
+            ) : null}
 
             {error ? (
               <div className="alert alert-error" role="alert">
