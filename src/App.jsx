@@ -11,6 +11,7 @@ import Documents from './pages/Documents';
 import Profile from './pages/Profile';
 import Help from './pages/Help';
 import Notifications from './pages/Notifications';
+import Privacy from './pages/Privacy';
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth();
@@ -36,6 +37,7 @@ export default function App() {
       <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
       <Route path="/help" element={<PrivateRoute><Help /></PrivateRoute>} />
       <Route path="/notifications" element={<PrivateRoute><Notifications /></PrivateRoute>} />
+      <Route path="/privacy" element={<PrivateRoute><Privacy /></PrivateRoute>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

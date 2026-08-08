@@ -17,6 +17,7 @@ const SECTIONS = [
     links: [
       { to: '/notifications', label: 'Notifications', icon: 'bell' },
       { to: '/profile', label: 'Profile', icon: 'user' },
+      { to: '/privacy', label: 'Your information', icon: 'shield' },
       { to: '/help', label: 'Help & FAQ', icon: 'help' },
     ],
   },
