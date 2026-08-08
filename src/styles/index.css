@@ -1893,3 +1893,45 @@ select, .toolbar-select { min-height: 38px; }
   .idle-actions { flex-direction: column-reverse; }
   .idle-actions .btn { width: 100%; }
 }
+
+/* --- Form subsections and three-column rows -------------------------------
+ * Step 1 grew long enough to need internal headings: applicant particulars,
+ * then postal address, then employment. Without them it reads as one
+ * undifferentiated wall of fields.
+ */
+.form-subsection-title {
+  margin: 2rem 0 .85rem;
+  padding-bottom: .4rem;
+  border-bottom: 1px solid var(--border);
+  font-size: .9375rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.form-subsection-title:first-of-type { margin-top: 1rem; }
+
+/* A separate class rather than making .form-row flexible, so the two-column
+ * rows already in use keep their exact layout. */
+.form-row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.form-row-3 > .form-group { margin-bottom: 1rem; }
+
+/* A checkbox that governs the fields beneath it, so it reads as a switch for
+ * the section rather than as one more question in the list. */
+.checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  margin-bottom: 1rem;
+  padding: .75rem .9rem;
+  background: var(--surface-sunk, #f8fafc);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: .9375rem;
+}
+.checkbox-row input[type="checkbox"] { margin-top: .15rem; flex: none; }
+
+.field-hint.warn { color: #b45309; }
+
+@media (max-width: 720px) {
+  .form-row-3 { grid-template-columns: 1fr; }
+}

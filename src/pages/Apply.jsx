@@ -13,13 +13,35 @@ import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
 import { friendlyError } from '../utils/apiError';
 
+/** Offered as suggestions, not imposed — the field accepts anything typed. */
+const TITLES = ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Prof', 'Rev', 'Adv', 'Nkosi', 'Nkosikazi'];
+
+/**
+ * The only answers for which an employer exists.
+ *
+ * Everything else — unemployed, pensioner, something else — has no employer to
+ * name, so those three questions are not asked at all.
+ */
+const EMPLOYER_DETAILS_NEEDED = ['EMPLOYED', 'SELF_EMPLOYED'];
+
+/** Sex as recorded in the ID number: the sequence digits, 0000–4999 is female. */
+function sexFromIdNumber(idNumber) {
+  const digits = String(idNumber || '').replace(/\D/g, '');
+  if (digits.length !== 13) return '';
+  return Number(digits.slice(6, 10)) < 5000 ? 'FEMALE' : 'MALE';
+}
+
 // Enum fields start blank on purpose. Defaulting them (e.g. to EMPLOYED) would
 // record an answer the applicant never gave.
 const emptyForm = {
+  title: '',
   maritalStatus: '',
   surname: '',
   names: '',
   idNumber: '',
+  sex: '',
+  /** Local only, never sent: stops the ID number overwriting a chosen answer. */
+  sexTouched: false,
   cellNumber: '',
   residentialAddress: '',
   addressLatitude: '',
@@ -27,7 +49,12 @@ const emptyForm = {
   addressFormatted: '',
   addressSource: '',
   addressAccuracyM: '',
-  postalAddress: '',
+  postalSameAsResidential: false,
+  postalLine1: '',
+  postalLine2: '',
+  postalSuburb: '',
+  postalCity: '',
+  postalCode: '',
   employerName: '',
   employerAddress: '',
   workTelNumber: '',
@@ -90,8 +117,8 @@ function buildPayload(form, nextStep) {
 
   // Strings — send only if non-empty
   const stringFields = [
-    'maritalStatus', 'surname', 'names', 'idNumber', 'cellNumber',
-    'residentialAddress', 'postalAddress', 'employerName', 'employerAddress',
+    'title', 'maritalStatus', 'surname', 'names', 'idNumber', 'sex', 'cellNumber',
+    'residentialAddress', 'employerName', 'employerAddress',
     'workTelNumber', 'employmentStatus', 'waterMeterNumber', 'electricityMeterNumber',
     'wardNumber', 'municipalAccountNumber', 'eskomAccountNumber',
     'tenure', 'applicantCategory', 'otherPropertyDetails', 'incomeExclusions',
@@ -103,6 +130,24 @@ function buildPayload(form, nextStep) {
       payload[key] = form[key];
     }
   });
+
+  /**
+   * The postal address, always sent as a set.
+   *
+   * The parts go together even when blank, because clearing a suburb has to
+   * reach the server as an empty value rather than being skipped as "unchanged".
+   * The server composes the single-line address and decides what to store.
+   */
+  payload.postalSameAsResidential = Boolean(form.postalSameAsResidential);
+  if (!form.postalSameAsResidential) {
+    ['postalLine1', 'postalLine2', 'postalSuburb', 'postalCity', 'postalCode'].forEach((key) => {
+      payload[key] = form[key] || '';
+    });
+  }
+
+  // Employer details are cleared by the server when the employment answer means
+  // there is no employer, so the same rule applies to a councillor capturing at
+  // a door as to somebody filling this in themselves.
 
   // Booleans
   if (typeof form.cellVerified === 'boolean') {
@@ -189,10 +234,17 @@ export default function Apply() {
         setStep(draft.currentStep || 1);
         setForm({
           ...emptyForm,
+          title: draft.title || '',
           maritalStatus: draft.maritalStatus || '',
           surname: draft.surname || '',
           names: draft.names || '',
           idNumber: draft.idNumber || '',
+          // Falls back to the ID number for drafts started before sex was asked
+          // explicitly, so an old draft opens with the field already answered.
+          sex: draft.sex || sexFromIdNumber(draft.idNumber) || '',
+          // A stored answer counts as chosen, so correcting the ID number later
+          // does not quietly overwrite it.
+          sexTouched: Boolean(draft.sex),
           cellNumber: draft.cellNumber || '',
           residentialAddress: draft.residentialAddress || '',
           addressLatitude: draft.addressLatitude ?? '',
@@ -200,7 +252,12 @@ export default function Apply() {
           addressFormatted: draft.addressFormatted || '',
           addressSource: draft.addressSource || '',
           addressAccuracyM: draft.addressAccuracyM ?? '',
-          postalAddress: draft.postalAddress || '',
+          postalSameAsResidential: Boolean(draft.postalSameAsResidential),
+          postalLine1: draft.postalLine1 || '',
+          postalLine2: draft.postalLine2 || '',
+          postalSuburb: draft.postalSuburb || '',
+          postalCity: draft.postalCity || '',
+          postalCode: draft.postalCode || '',
           employerName: draft.employerName || '',
           employerAddress: draft.employerAddress || '',
           workTelNumber: draft.workTelNumber || '',
@@ -256,7 +313,28 @@ export default function Apply() {
     }
   };
 
-  const update = (field, value) => setForm((f) => ({ ...f, [field]: value }));
+  const update = (field, value) => setForm((f) => {
+    const next = { ...f, [field]: value };
+
+    /**
+     * Fill in sex from the ID number as it is typed.
+     *
+     * Only while the applicant has not answered it themselves, and only once the
+     * thirteenth digit arrives. Overwriting a deliberate choice every keystroke
+     * would make the field impossible to correct — which is the whole reason it
+     * is editable.
+     */
+    if (field === 'idNumber' && !f.sexTouched) {
+      const derived = sexFromIdNumber(value);
+      if (derived) next.sex = derived;
+    }
+    if (field === 'sex') next.sexTouched = true;
+
+    return next;
+  });
+
+  /** What the ID number says, for the note under the field. */
+  const derivedSex = sexFromIdNumber(form.idNumber);
 
   /**
    * Return the application id, creating the draft the first time it is needed.
@@ -447,18 +525,27 @@ export default function Apply() {
           {step === 1 && (
             <>
               <h2 className="form-section-title">Applicant Particulars</h2>
-              <div className="form-group">
-                <label>Marital Status</label>
-                <select value={form.maritalStatus} onChange={(e) => update('maritalStatus', e.target.value)}>
-                  <option value="">Select...</option>
-                  <option value="SINGLE">Single</option>
-                  <option value="MARRIED">Married</option>
-                  <option value="DIVORCED">Divorced</option>
-                  <option value="WIDOWED">Widowed</option>
-                  <option value="SEPARATED">Separated</option>
-                </select>
-              </div>
-              <div className="form-row">
+
+              <div className="form-row-3">
+                <div className="form-group" style={{ maxWidth: '9rem' }}>
+                  <label>Title</label>
+                  {/*
+                    A list, with the option to type something else. Any fixed
+                    list is too short for the titles people actually use, and
+                    getting somebody's title wrong on a municipal letter is a
+                    small insult that costs nothing to avoid.
+                  */}
+                  <input
+                    list="title-options"
+                    value={form.title}
+                    onChange={(e) => update('title', e.target.value)}
+                    placeholder="Mr"
+                    maxLength={20}
+                  />
+                  <datalist id="title-options">
+                    {TITLES.map((t) => <option key={t} value={t} />)}
+                  </datalist>
+                </div>
                 <div className="form-group">
                   <label>Surname</label>
                   <input value={form.surname} onChange={(e) => update('surname', e.target.value)} placeholder="Enter surname" />
@@ -468,17 +555,54 @@ export default function Apply() {
                   <input value={form.names} onChange={(e) => update('names', e.target.value)} placeholder="Enter name(s)" />
                 </div>
               </div>
+
               <div className="form-row">
                 <div className="form-group">
                   <label>ID Number</label>
                   <input value={form.idNumber} onChange={(e) => update('idNumber', e.target.value)} placeholder="13-digit ID" maxLength={13} inputMode="numeric" />
                   {/*
-                    Date of birth, age and sex are all in these thirteen digits,
-                    so we read them back instead of asking again. Showing them
-                    also catches a mistyped digit here rather than at
-                    verification.
+                    Date of birth and age are in these thirteen digits, so we
+                    read them back instead of asking again. Showing them also
+                    catches a mistyped digit here rather than at verification.
                   */}
                   <DerivedIdentity idNumber={form.idNumber} />
+                </div>
+                <div className="form-group">
+                  <label>Sex</label>
+                  {/*
+                    Filled in from the ID number, and changeable.
+                    The sequence digits record sex as registered at birth, which
+                    is the right default and wrong for some people. Leaving it
+                    read-only would force them to be recorded incorrectly on a
+                    municipal record for the sake of a derivation.
+                  */}
+                  <select value={form.sex} onChange={(e) => update('sex', e.target.value)}>
+                    <option value="">Select...</option>
+                    <option value="FEMALE">Female</option>
+                    <option value="MALE">Male</option>
+                  </select>
+                  {derivedSex && form.sex && derivedSex !== form.sex ? (
+                    <small className="field-hint">
+                      Your ID number indicates {derivedSex === 'FEMALE' ? 'female' : 'male'}. We will record what you
+                      selected.
+                    </small>
+                  ) : (
+                    <small className="field-hint">Filled in from your ID number. Change it if it is wrong.</small>
+                  )}
+                </div>
+              </div>
+
+              <div className="form-row">
+                <div className="form-group">
+                  <label>Marital Status</label>
+                  <select value={form.maritalStatus} onChange={(e) => update('maritalStatus', e.target.value)}>
+                    <option value="">Select...</option>
+                    <option value="SINGLE">Single</option>
+                    <option value="MARRIED">Married</option>
+                    <option value="DIVORCED">Divorced</option>
+                    <option value="WIDOWED">Widowed</option>
+                    <option value="SEPARATED">Separated</option>
+                  </select>
                 </div>
                 <div className="form-group">
                   <label>Cell Number</label>
@@ -515,33 +639,126 @@ export default function Apply() {
                   }))
                 }
               />
+              {/* --- Postal address ------------------------------------- */}
+              <h3 className="form-subsection-title">Postal Address</h3>
+
+              <label className="checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={form.postalSameAsResidential}
+                  onChange={(e) => update('postalSameAsResidential', e.target.checked)}
+                />
+                <span>My postal address is the same as my residential address</span>
+              </label>
+
+              {/*
+                Hidden rather than disabled when it is the same.
+                Most households give the same address, and five greyed-out boxes
+                still read as five things left undone. Nothing is copied into
+                them either — one answer on file cannot fall out of step with
+                itself when somebody moves.
+              */}
+              {!form.postalSameAsResidential && (
+                <>
+                  <div className="form-group">
+                    <label>Street address, PO Box or Private Bag</label>
+                    <input
+                      value={form.postalLine1}
+                      onChange={(e) => update('postalLine1', e.target.value)}
+                      placeholder="e.g. 4512 Extension 3, or PO Box 1183"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Complex, unit or farm name <span className="muted">(if any)</span></label>
+                    <input
+                      value={form.postalLine2}
+                      onChange={(e) => update('postalLine2', e.target.value)}
+                      placeholder="e.g. Unit 14, Protea Court"
+                    />
+                  </div>
+                  <div className="form-row-3">
+                    <div className="form-group">
+                      <label>Suburb or township</label>
+                      <input
+                        value={form.postalSuburb}
+                        onChange={(e) => update('postalSuburb', e.target.value)}
+                        placeholder="e.g. Sebokeng"
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Town or city</label>
+                      <input
+                        value={form.postalCity}
+                        onChange={(e) => update('postalCity', e.target.value)}
+                        placeholder="e.g. Vanderbijlpark"
+                      />
+                    </div>
+                    <div className="form-group" style={{ maxWidth: '10rem' }}>
+                      <label>Postal code</label>
+                      {/*
+                        Four digits, and kept as text. As a number 0001 becomes
+                        1 and the address is quietly wrong.
+                      */}
+                      <input
+                        value={form.postalCode}
+                        onChange={(e) => update('postalCode', e.target.value.replace(/\D/g, '').slice(0, 4))}
+                        placeholder="1900"
+                        inputMode="numeric"
+                        maxLength={4}
+                      />
+                      {form.postalCode && form.postalCode.length !== 4 ? (
+                        <small className="field-hint warn">A South African postal code is four digits.</small>
+                      ) : null}
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {/* --- Employment ----------------------------------------- */}
+              <h3 className="form-subsection-title">Employment</h3>
+
               <div className="form-group">
-                <label>Postal Address</label>
-                <input value={form.postalAddress} onChange={(e) => update('postalAddress', e.target.value)} placeholder="Postal address" />
-              </div>
-              <div className="form-group">
-                <label>Name of Employer</label>
-                <input value={form.employerName} onChange={(e) => update('employerName', e.target.value)} placeholder="Employer name" />
-              </div>
-              <div className="form-group">
-                <label>Employer's Address</label>
-                <input value={form.employerAddress} onChange={(e) => update('employerAddress', e.target.value)} placeholder="Employer address" />
-              </div>
-              <div className="form-group">
-                <label>Work Tel. Number</label>
-                <input value={form.workTelNumber} onChange={(e) => update('workTelNumber', e.target.value)} placeholder="Work telephone" />
-              </div>
-              <div className="form-group">
-                <label>Employment Status</label>
+                <label>Are you employed?</label>
+                {/*
+                  Asked before the employer questions, not after them.
+                  Somebody unemployed was previously asked for an employer's name,
+                  address and work telephone first, and had to work out that those
+                  did not apply to them. On a form people already find difficult,
+                  three questions that cannot be answered read as three failures.
+                */}
                 <select value={form.employmentStatus} onChange={(e) => update('employmentStatus', e.target.value)}>
                   <option value="">Select...</option>
-                  <option value="EMPLOYED">Employed</option>
-                  <option value="UNEMPLOYED">Unemployed</option>
-                  <option value="SELF_EMPLOYED">Self-employed</option>
-                  <option value="PENSIONER">Pensioner</option>
-                  <option value="OTHER">Other</option>
+                  <option value="EMPLOYED">Yes, I am employed</option>
+                  <option value="SELF_EMPLOYED">I work for myself</option>
+                  <option value="UNEMPLOYED">No, I am unemployed</option>
+                  <option value="PENSIONER">No, I am a pensioner</option>
+                  <option value="OTHER">Something else</option>
                 </select>
               </div>
+
+              {EMPLOYER_DETAILS_NEEDED.includes(form.employmentStatus) && (
+                <>
+                  <div className="form-group">
+                    <label>{form.employmentStatus === 'SELF_EMPLOYED' ? 'Name of your business' : 'Name of employer'}</label>
+                    <input value={form.employerName} onChange={(e) => update('employerName', e.target.value)} placeholder="Employer name" />
+                  </div>
+                  <div className="form-group">
+                    <label>{form.employmentStatus === 'SELF_EMPLOYED' ? 'Business address' : "Employer's address"}</label>
+                    <input value={form.employerAddress} onChange={(e) => update('employerAddress', e.target.value)} placeholder="Employer address" />
+                  </div>
+                  <div className="form-group">
+                    <label>Work telephone number <span className="muted">(if any)</span></label>
+                    <input value={form.workTelNumber} onChange={(e) => update('workTelNumber', e.target.value)} placeholder="Work telephone" />
+                  </div>
+                </>
+              )}
+
+              {form.employmentStatus && !EMPLOYER_DETAILS_NEEDED.includes(form.employmentStatus) ? (
+                <p className="field-hint">
+                  No employer details are needed. You will be asked about any income the household receives on the next
+                  step.
+                </p>
+              ) : null}
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => navigate('/my-applications')}>Cancel</button>
                 <button type="button" className="btn btn-primary" onClick={() => saveStep(2)} disabled={loading}>
