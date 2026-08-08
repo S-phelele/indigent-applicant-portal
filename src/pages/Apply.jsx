@@ -4,6 +4,8 @@ import AppLayout from '../components/AppLayout';
 import Stepper from '../components/Stepper';
 import AddressCapture from '../components/AddressCapture';
 import HouseholdEditor from '../components/HouseholdEditor';
+import DerivedIdentity from '../components/DerivedIdentity';
+import FunctioningQuestions from '../components/FunctioningQuestions';
 import OtpModal from '../components/OtpModal';
 import api from '../services/api';
 import Icon from '../components/ui/Icon';
@@ -60,6 +62,14 @@ const emptyForm = {
   consentSiteVisit: false,
   consentDataMatching: false,
   declarationTruthful: false,
+  // The Washington Group Short Set. Date of birth, age and sex are NOT here:
+  // the server derives all three from the ID number.
+  difficultySeeing: '',
+  difficultyHearing: '',
+  difficultyWalking: '',
+  difficultyRemembering: '',
+  difficultySelfCare: '',
+  difficultyCommunicating: '',
 };
 
 function toNum(val) {
@@ -85,6 +95,8 @@ function buildPayload(form, nextStep) {
     'workTelNumber', 'employmentStatus', 'waterMeterNumber', 'electricityMeterNumber',
     'wardNumber', 'municipalAccountNumber', 'eskomAccountNumber',
     'tenure', 'applicantCategory', 'otherPropertyDetails', 'incomeExclusions',
+    'difficultySeeing', 'difficultyHearing', 'difficultyWalking',
+    'difficultyRemembering', 'difficultySelfCare', 'difficultyCommunicating',
   ];
   stringFields.forEach((key) => {
     if (form[key] !== '' && form[key] !== null && form[key] !== undefined) {
@@ -459,7 +471,14 @@ export default function Apply() {
               <div className="form-row">
                 <div className="form-group">
                   <label>ID Number</label>
-                  <input value={form.idNumber} onChange={(e) => update('idNumber', e.target.value)} placeholder="13-digit ID" />
+                  <input value={form.idNumber} onChange={(e) => update('idNumber', e.target.value)} placeholder="13-digit ID" maxLength={13} inputMode="numeric" />
+                  {/*
+                    Date of birth, age and sex are all in these thirteen digits,
+                    so we read them back instead of asking again. Showing them
+                    also catches a mistyped digit here rather than at
+                    verification.
+                  */}
+                  <DerivedIdentity idNumber={form.idNumber} />
                 </div>
                 <div className="form-group">
                   <label>Cell Number</label>
@@ -779,6 +798,9 @@ export default function Apply() {
                   Tell us about them here so they are not counted against you.
                 </p>
               </div>
+
+              <h2 className="form-section-title">How you manage day to day</h2>
+              <FunctioningQuestions form={form} update={update} />
 
               <h2 className="form-section-title">Your permission and declaration</h2>
               <p className="field-hint" style={{ marginBottom: '1rem' }}>
