@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import AppLayout from '../components/AppLayout';
 import Stepper from '../components/Stepper';
 import AddressCapture from '../components/AddressCapture';
@@ -7,7 +7,6 @@ import HouseholdEditor from '../components/HouseholdEditor';
 import DerivedIdentity from '../components/DerivedIdentity';
 import IncomeSources from '../components/IncomeSources';
 import FunctioningQuestions from '../components/FunctioningQuestions';
-import OtpModal from '../components/OtpModal';
 import api from '../services/api';
 import Icon from '../components/ui/Icon';
 import { useToast } from '../components/ui/Toast';
@@ -58,7 +57,6 @@ const emptyForm = {
   employerName: '',
   employerAddress: '',
   workTelNumber: '',
-  cellVerified: false,
   peopleOnProperty: '',
   childrenUnder18: '',
   adults: '',
@@ -147,9 +145,6 @@ function buildPayload(form, nextStep) {
   // a door as to somebody filling this in themselves.
 
   // Booleans
-  if (typeof form.cellVerified === 'boolean') {
-    payload.cellVerified = form.cellVerified;
-  }
 
   // Consent is legally load-bearing, so it is always sent — including when it
   // has been withdrawn. Omitting a false would leave a stale "yes" on the record.
@@ -206,7 +201,6 @@ export default function Apply() {
   const [form, setForm] = useState(emptyForm);
   const [applicationId, setApplicationId] = useState(null);
   const [documents, setDocuments] = useState([]);
-  const [showOtp, setShowOtp] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -258,7 +252,6 @@ export default function Apply() {
           employerName: draft.employerName || '',
           employerAddress: draft.employerAddress || '',
           workTelNumber: draft.workTelNumber || '',
-          cellVerified: !!draft.cellVerified,
           peopleOnProperty: draft.peopleOnProperty ?? '',
           childrenUnder18: draft.childrenUnder18 ?? '',
           adults: draft.adults ?? '',
@@ -380,49 +373,6 @@ export default function Apply() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const sendOtp = async () => {
-    if (!form.cellNumber || form.cellNumber.replace(/\D/g, '').length < 10) {
-      setError('Please enter a valid cell number first (at least 10 digits)');
-      return;
-    }
-    setError('');
-    setSuccess('');
-    try {
-      const res = await api.post('/auth/send-otp', { cellNumber: form.cellNumber });
-      if (res.data.demoOtp) {
-        console.log('Demo OTP:', res.data.demoOtp);
-        setSuccess(`OTP sent (demo code: ${res.data.demoOtp})`);
-      } else {
-        setSuccess(res.data.message || 'OTP sent');
-      }
-      setShowOtp(true);
-    } catch (err) {
-      setError(friendlyError(err, 'Failed to send OTP'));
-    }
-  };
-
-  const verifyOtp = async (code) => {
-    await api.post('/auth/verify-otp', { cellNumber: form.cellNumber, code });
-    update('cellVerified', true);
-    // Persist verification on the application. If this fails the UI must not claim
-    // the number is verified when the database says otherwise.
-    {
-      try {
-        const id = await ensureApplication();
-        await api.patch(`/applications/${id}`, { cellVerified: true, cellNumber: form.cellNumber });
-      } catch (err) {
-        update('cellVerified', false);
-        setShowOtp(false);
-        setError(
-          friendlyError(err, 'Code accepted, but we could not save the verification. Please try again.')
-        );
-        return;
-      }
-    }
-    setShowOtp(false);
-    toast.success('Cell number verified', 'You can carry on with your application.');
   };
 
   const handleUpload = async (docId, file) => {
@@ -595,14 +545,27 @@ export default function Apply() {
                     <option value="SEPARATED">Separated</option>
                   </select>
                 </div>
+                {/*
+                  Shown, not asked.
+
+                  The number was verified before this application could be
+                  started. Letting it be re-typed here would allow a verified
+                  account to send an application carrying a different,
+                  unverified number — the exact hole this change closes.
+                  Changing it happens on the profile, where it costs a new code.
+                */}
                 <div className="form-group">
-                  <label>Cell Number</label>
-                  <div className="input-with-btn">
-                    <input value={form.cellNumber} onChange={(e) => update('cellNumber', e.target.value)} placeholder="081 591 2000" />
-                    <button type="button" className="btn btn-primary btn-sm" onClick={sendOtp}>
-                      {form.cellVerified ? <><Icon name="check" size={14} /> Verified</> : 'Send OTP'}
-                    </button>
+                  <label>Cell number</label>
+                  <div className="verified-field">
+                    <span>{user?.cellNumber || form.cellNumber}</span>
+                    <span className={user?.isVerified ? 'badge badge-approved' : 'badge badge-pending'}>
+                      {user?.isVerified ? <><Icon name="check" size={13} /> Verified</> : 'Not verified'}
+                    </span>
                   </div>
+                  <small>
+                    The municipality sends every update here.{' '}
+                    <Link to="/profile">Change it on your profile</Link> if it is wrong.
+                  </small>
                 </div>
               </div>
               <AddressCapture
@@ -1086,15 +1049,6 @@ export default function Apply() {
           )}
         </div>
       </div>
-
-      {showOtp && (
-        <OtpModal
-          cellNumber={form.cellNumber}
-          onVerify={verifyOtp}
-          onCancel={() => setShowOtp(false)}
-          onResend={sendOtp}
-        />
-      )}
 
     </AppLayout>
   );

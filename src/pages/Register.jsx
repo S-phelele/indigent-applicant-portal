@@ -58,12 +58,29 @@ export default function Register() {
       return;
     }
 
+    /**
+     * Both are required now, and checked here so the applicant is told before a
+     * round trip. The cell number is how every decision reaches the household
+     * and has to be verified before an application can be started; the ID
+     * number is what the register is keyed on.
+     */
+    if (!form.idNumber.trim()) {
+      setError('Please enter your 13-digit South African ID number.');
+      return;
+    }
+    if (!form.cellNumber.trim()) {
+      setError('Please enter your cell number. We send a verification code to it.');
+      return;
+    }
+
     setLoading(true);
     try {
       const { confirmPassword, ...payload } = form;
       const user = await register(payload);
-      toast.success('Account created', `Welcome, ${user.firstName || 'there'}. Let's start your application.`);
-      navigate('/dashboard');
+      toast.success('Account created', `Welcome, ${user.firstName || 'there'}. Check your phone for a code.`);
+      // Straight to verification: the code is already on its way, and the API
+      // refuses everything else until the number is proved.
+      navigate('/verify');
     } catch (err) {
       setError(friendlyError(err, 'Registration failed'));
     } finally {

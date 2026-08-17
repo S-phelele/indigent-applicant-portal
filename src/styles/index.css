@@ -2027,3 +2027,34 @@ select, .toolbar-select { min-height: 38px; }
   .income-row { grid-template-columns: 1fr auto; }
   .income-row-actions { grid-column: 2; }
 }
+
+/* ---------------------------------------------------------------------------
+   A field that is shown rather than asked
+
+   The cell number is verified before an application can be started, so the
+   wizard displays it instead of offering an input. Letting it be re-typed there
+   would allow a verified account to submit an application carrying a different,
+   unverified number — which is the whole hole being closed.
+   --------------------------------------------------------------------------- */
+
+.verified-field {
+  display: flex; align-items: center; justify-content: space-between; gap: .75rem;
+  padding: .6rem .8rem;
+  background: var(--gray-50);
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  font-weight: 550;
+}
+
+.verified-field .badge { display: inline-flex; align-items: center; gap: .3rem; }
+
+/* A link that is a button, because it changes application state rather than
+   navigating to a document. Styled as a link so it reads as one. */
+.btn-link {
+  background: none; border: 0; padding: 0;
+  color: var(--brand); font: inherit; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.btn-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+.lede { font-size: 1.0625rem; line-height: 1.6; color: var(--gray-600); max-width: 60ch; }

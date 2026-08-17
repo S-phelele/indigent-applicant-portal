@@ -72,9 +72,14 @@ export default function OtpModal({ cellNumber, onVerify, onCancel, onResend }) {
       iconVariant="info"
       footer={
         <>
-          <button type="button" className="btn btn-outline" onClick={onCancel} disabled={loading}>
-            Cancel
-          </button>
+          {/* Omitted where there is nothing to cancel back to — on the verify
+              page this modal *is* the page, and a Cancel button that does
+              nothing is worse than no button. */}
+          {onCancel ? (
+            <button type="button" className="btn btn-outline" onClick={onCancel} disabled={loading}>
+              Cancel
+            </button>
+          ) : null}
           <button type="button" className="btn btn-primary" onClick={() => submit(digits.join(''))} disabled={loading}>
             {loading ? 'Verifying…' : 'Verify code'}
           </button>
