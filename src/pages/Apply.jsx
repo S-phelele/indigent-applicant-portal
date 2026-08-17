@@ -23,6 +23,26 @@ const TITLES = ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Prof', 'Rev', 'Adv', 'Nkosi', 
  * name, so those three questions are not asked at all.
  */
 
+/**
+ * Initials from whatever given names were typed.
+ *
+ * Mirrors src/lib/names.js on the server. Derived rather than asked for, so the
+ * two can never disagree. A hyphenated name gives an initial per part, as it is
+ * written on an identity document, and the first *letter* is taken rather than
+ * the first character — people bracket a preferred name, and "Nomsa (Thandiwe)"
+ * should still give N.T.
+ */
+function initialsOf(fullName) {
+  return String(fullName || '')
+    .trim()
+    .split(/\s+/)
+    .flatMap((part) => part.split('-'))
+    .map((part) => [...part].find((ch) => /\p{L}/u.test(ch)))
+    .filter(Boolean)
+    .map((ch) => `${ch.toUpperCase()}.`)
+    .join('');
+}
+
 /** Sex as recorded in the ID number: the sequence digits, 0000–4999 is female. */
 function sexFromIdNumber(idNumber) {
   const digits = String(idNumber || '').replace(/\D/g, '');
@@ -36,7 +56,7 @@ const emptyForm = {
   title: '',
   maritalStatus: '',
   surname: '',
-  names: '',
+  fullName: '',
   idNumber: '',
   sex: '',
   /** Local only, never sent: stops the ID number overwriting a chosen answer. */
@@ -112,7 +132,7 @@ function buildPayload(form, nextStep) {
 
   // Strings — send only if non-empty
   const stringFields = [
-    'title', 'maritalStatus', 'surname', 'names', 'idNumber', 'sex', 'cellNumber',
+    'title', 'maritalStatus', 'surname', 'fullName', 'idNumber', 'sex', 'cellNumber',
     'residentialAddress', 'employerName', 'employerAddress',
     'workTelNumber', 'waterMeterNumber', 'electricityMeterNumber',
     'wardNumber', 'municipalAccountNumber', 'eskomAccountNumber',
@@ -228,7 +248,7 @@ export default function Apply() {
           title: draft.title || '',
           maritalStatus: draft.maritalStatus || '',
           surname: draft.surname || '',
-          names: draft.names || '',
+          fullName: draft.fullName || draft.names || '',
           idNumber: draft.idNumber || '',
           // Falls back to the ID number for drafts started before sex was asked
           // explicitly, so an old draft opens with the field already answered.
@@ -275,7 +295,7 @@ export default function Apply() {
         setForm((f) => ({
           ...f,
           surname: f.surname || user?.lastName || '',
-          names: f.names || user?.firstName || '',
+          fullName: f.fullName || f.names || user?.firstName || '',
           idNumber: f.idNumber || user?.idNumber || '',
           cellNumber: f.cellNumber || user?.cellNumber || '',
         }));
@@ -491,9 +511,26 @@ export default function Apply() {
                   <label>Surname</label>
                   <input value={form.surname} onChange={(e) => update('surname', e.target.value)} placeholder="Enter surname" />
                 </div>
+                {/*
+                  Every given name, in one field.
+
+                  "Name(s)" was filled in inconsistently — sometimes one name,
+                  sometimes all of them, sometimes the whole name including the
+                  surname. Somebody with three given names has a right to have
+                  all three on a municipal record, and the initials below are
+                  derived from whatever is typed rather than asked for
+                  separately, so the two can never disagree.
+                */}
                 <div className="form-group">
-                  <label>Name(s)</label>
-                  <input value={form.names} onChange={(e) => update('names', e.target.value)} placeholder="Enter name(s)" />
+                  <label>Full name</label>
+                  <input
+                    value={form.fullName}
+                    onChange={(e) => update('fullName', e.target.value)}
+                    placeholder="All your names, as on your ID"
+                  />
+                  {initialsOf(form.fullName) ? (
+                    <small className="field-hint">Initials: {initialsOf(form.fullName)}</small>
+                  ) : null}
                 </div>
               </div>
 
@@ -750,6 +787,7 @@ export default function Apply() {
 
               <h2 className="form-section-title">Who lives here</h2>
               <HouseholdEditor
+                declaredPeople={form.peopleOnProperty}
                 applicationId={applicationId}
                 onChange={(app) => setForm((f) => ({
                   ...f,

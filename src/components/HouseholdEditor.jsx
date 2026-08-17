@@ -29,7 +29,7 @@ const RELATIONSHIPS = [
 
 const blank = { fullName: '', relationship: '', idNumber: '', age: '', monthlyIncome: '' };
 
-export default function HouseholdEditor({ applicationId, onChange, readOnly = false }) {
+export default function HouseholdEditor({ applicationId, onChange, readOnly = false, declaredPeople }) {
   const toast = useToast();
   const [members, setMembers] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -110,12 +110,38 @@ export default function HouseholdEditor({ applicationId, onChange, readOnly = fa
     return <p className="field-hint">Loading your household…</p>;
   }
 
+  // +1 throughout: the applicant lives there too but is not a row, because
+  // their details *are* the application.
+  const counted = Number(declaredPeople) || 0;
+  const listedTotal = members.length + 1;
+  const matches = counted > 0 && listedTotal === counted;
+
   return (
     <div className="household">
       <p className="field-hint">
         List everyone who lives on the property with you. You do not need to add yourself — your own details are already
         on this application.
       </p>
+
+      {/*
+        The count against what was declared.
+
+        peopleOnProperty is a number somebody types; this list is one they
+        build, and nothing reconciled them — so an application could say five
+        people and name two. Income per person is half the means test and is
+        computed from the typed number, so a roll that does not match is not a
+        tidiness problem. Shown live here and refused at submission.
+      */}
+      {counted > 0 ? (
+        <p className={matches ? 'household-count met' : 'household-count'}>
+          <Icon name={matches ? 'check' : 'alert-circle'} size={14} />
+          {matches
+            ? `All ${counted} people on the property are listed.`
+            : listedTotal < counted
+              ? `${listedTotal} of ${counted} people listed. Add ${counted - listedTotal} more before you can submit.`
+              : `${listedTotal} listed, but you said ${counted} live here. Correct whichever is wrong.`}
+        </p>
+      ) : null}
 
       {members.length > 0 ? (
         <ul className="household-list">

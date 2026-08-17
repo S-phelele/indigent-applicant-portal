@@ -2058,3 +2058,15 @@ select, .toolbar-select { min-height: 38px; }
 .btn-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 
 .lede { font-size: 1.0625rem; line-height: 1.6; color: var(--gray-600); max-width: 60ch; }
+
+/* The household roll against the declared headcount.
+   Not a tidiness warning: income per person is half the means test and is
+   computed from the typed number, so a roll that does not match produces an
+   assessment against a figure that was never true. */
+.household-count {
+  display: inline-flex; align-items: center; gap: .4rem;
+  margin: 0 0 .75rem;
+  font-size: .875rem;
+  color: var(--warning, #92400e);
+}
+.household-count.met { color: var(--success); }
