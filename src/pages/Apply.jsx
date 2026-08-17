@@ -8,6 +8,8 @@ import DerivedIdentity from '../components/DerivedIdentity';
 import IncomeSources from '../components/IncomeSources';
 import FunctioningQuestions from '../components/FunctioningQuestions';
 import api from '../services/api';
+import useUpload from '../hooks/useUpload';
+import UploadProgress from '../components/ui/UploadProgress';
 import Icon from '../components/ui/Icon';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../context/AuthContext';
@@ -221,6 +223,7 @@ export default function Apply() {
   const [form, setForm] = useState(emptyForm);
   const [applicationId, setApplicationId] = useState(null);
   const [documents, setDocuments] = useState([]);
+  const { progress, done: justUploaded, upload: sendFile, cancel } = useUpload();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -406,7 +409,11 @@ export default function Apply() {
       // Content-Type is intentionally unset so the browser generates the multipart
       // boundary. Also keeps the api.js instance free of a JSON default, which would
       // otherwise serialise this FormData to JSON and drop the file.
-      const res = await api.post(`/documents/${appId}/upload`, fd);
+      const res = await sendFile(docId, `/documents/${appId}/upload`, fd, {
+        fileName: file.name, size: file.size,
+      });
+      // Cancelling is a choice, not a failure, so nothing is said about it.
+      if (res?.cancelled) return;
       setDocuments((docs) =>
         docs.map((d) => (d.id === docId ? res.data.data : d))
       );
@@ -1015,6 +1022,20 @@ export default function Apply() {
               ) : (
                 <div className="doc-list">
                   {documents.map((doc) => (
+                    /* While this row is uploading it becomes the progress row —
+                       the applicant is watching one thing, and a bar underneath
+                       an unchanged row invites a second click. */
+                    (progress?.key === doc.id || justUploaded === doc.id) ? (
+                      <UploadProgress
+                        key={doc.id}
+                        fileName={progress?.fileName || doc.fileName || doc.name}
+                        fraction={justUploaded === doc.id ? 1 : progress?.fraction}
+                        loaded={progress?.loaded}
+                        total={progress?.total}
+                        onCancel={justUploaded === doc.id ? null : cancel}
+                        done={justUploaded === doc.id}
+                      />
+                    ) : (
                     <div className="doc-row" key={doc.id}>
                       <div className="doc-row-info">
                         <div className="doc-row-title">{doc.name}</div>
@@ -1073,6 +1094,7 @@ export default function Apply() {
                         )}
                       </div>
                     </div>
+                    )
                   ))}
                 </div>
               )}

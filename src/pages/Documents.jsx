@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import AppLayout, { useApplication } from '../components/AppLayout';
 import Icon from '../components/ui/Icon';
 import api from '../services/api';
+import useUpload from '../hooks/useUpload';
+import UploadProgress from '../components/ui/UploadProgress';
 import { useToast } from '../components/ui/Toast';
 import { ConfirmModal } from '../components/ui/Modal';
 import { friendlyError } from '../utils/apiError';
@@ -11,6 +13,7 @@ function Inner() {
   const { application, refresh, loading } = useApplication();
   const toast = useToast();
   const [busyId, setBusyId] = useState(null);
+  const { progress, done: justUploaded, upload: sendFile, cancel } = useUpload();
   const [removing, setRemoving] = useState(null);
   const [extraType, setExtraType] = useState('OTHER');
 
@@ -24,7 +27,10 @@ function Inner() {
     fd.append('file', file);
     fd.append('type', extraType);
     try {
-      await api.post(`/documents/${application.id}/upload`, fd);
+      const res = await sendFile('new', `/documents/${application.id}/upload`, fd, {
+        fileName: file.name, size: file.size,
+      });
+      if (res?.cancelled) return;
       await refresh();
       toast.success('Document added', file.name);
     } catch (err) {
@@ -48,7 +54,10 @@ function Inner() {
     fd.append('file', file);
     fd.append('documentId', doc.id);
     try {
-      await api.post(`/documents/${application.id}/upload`, fd);
+      const res = await sendFile(doc.id, `/documents/${application.id}/upload`, fd, {
+        fileName: file.name, size: file.size,
+      });
+      if (res?.cancelled) return;
       await refresh();
       toast.success('Document uploaded', doc.name);
     } catch (err) {
@@ -96,6 +105,20 @@ function Inner() {
   const outstanding = required.filter((d) => d.status !== 'Uploaded');
 
   const row = (doc, allowEdit = editable) => (
+    /* While this row is uploading it becomes the progress row. Replacing it
+       rather than sitting alongside: the applicant is watching one thing, and a
+       bar underneath an unchanged row invites a second click on the row. */
+    (progress?.key === doc.id || justUploaded === doc.id) ? (
+      <UploadProgress
+        key={doc.id}
+        fileName={progress?.fileName || doc.fileName || doc.name}
+        fraction={justUploaded === doc.id ? 1 : progress?.fraction}
+        loaded={progress?.loaded}
+        total={progress?.total}
+        onCancel={justUploaded === doc.id ? null : cancel}
+        done={justUploaded === doc.id}
+      />
+    ) : (
     <div className={`doc-row${doc.status === 'Uploaded' ? ' is-uploaded' : ''}`} key={doc.id}>
       <div className="doc-row-info">
         <span className="doc-row-icon">
@@ -150,6 +173,7 @@ function Inner() {
         )}
       </div>
     </div>
+    )
   );
 
   return (
