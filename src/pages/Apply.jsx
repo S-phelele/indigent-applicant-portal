@@ -5,6 +5,7 @@ import Stepper from '../components/Stepper';
 import AddressCapture from '../components/AddressCapture';
 import HouseholdEditor from '../components/HouseholdEditor';
 import DerivedIdentity from '../components/DerivedIdentity';
+import IncomeSources from '../components/IncomeSources';
 import FunctioningQuestions from '../components/FunctioningQuestions';
 import OtpModal from '../components/OtpModal';
 import api from '../services/api';
@@ -22,7 +23,6 @@ const TITLES = ['Mr', 'Mrs', 'Ms', 'Miss', 'Dr', 'Prof', 'Rev', 'Adv', 'Nkosi', 
  * Everything else — unemployed, pensioner, something else — has no employer to
  * name, so those three questions are not asked at all.
  */
-const EMPLOYER_DETAILS_NEEDED = ['EMPLOYED', 'SELF_EMPLOYED'];
 
 /** Sex as recorded in the ID number: the sequence digits, 0000–4999 is female. */
 function sexFromIdNumber(idNumber) {
@@ -58,7 +58,6 @@ const emptyForm = {
   employerName: '',
   employerAddress: '',
   workTelNumber: '',
-  employmentStatus: '',
   cellVerified: false,
   peopleOnProperty: '',
   childrenUnder18: '',
@@ -66,11 +65,9 @@ const emptyForm = {
   pensionersOver60: '',
   waterMeterNumber: '',
   electricityMeterNumber: '',
-  salary: '',
-  oldAgePension: '',
-  disabilityPension: '',
-  businessIncome: '',
-  rentingIncome: '',
+  // The five amount fields are gone: income is a list of sources now, held by
+  // IncomeSources and saved through its own endpoint. Only the derived totals
+  // remain, read-only, so step 4 can show the threshold against a live figure.
   totalIncomePerPerson: '',
   totalHouseholdIncome: '',
   ownsImmovableProperty: '',
@@ -119,7 +116,7 @@ function buildPayload(form, nextStep) {
   const stringFields = [
     'title', 'maritalStatus', 'surname', 'names', 'idNumber', 'sex', 'cellNumber',
     'residentialAddress', 'employerName', 'employerAddress',
-    'workTelNumber', 'employmentStatus', 'waterMeterNumber', 'electricityMeterNumber',
+    'workTelNumber', 'waterMeterNumber', 'electricityMeterNumber',
     'wardNumber', 'municipalAccountNumber', 'eskomAccountNumber',
     'tenure', 'applicantCategory', 'otherPropertyDetails', 'incomeExclusions',
     'difficultySeeing', 'difficultyHearing', 'difficultyWalking',
@@ -182,10 +179,10 @@ function buildPayload(form, nextStep) {
   });
 
   // Decimals
-  const moneyFields = [
-    'salary', 'oldAgePension', 'disabilityPension',
-    'businessIncome', 'rentingIncome',
-  ];
+  // Income is saved by IncomeSources against /applications/:id/income, and the
+  // totals are derived server-side from those rows. Sending amounts from here
+  // would give the same figure two owners and no rule about which wins.
+  const moneyFields = [];
   moneyFields.forEach((key) => {
     const n = toNum(form[key]);
     if (n !== undefined) payload[key] = n;
@@ -261,7 +258,6 @@ export default function Apply() {
           employerName: draft.employerName || '',
           employerAddress: draft.employerAddress || '',
           workTelNumber: draft.workTelNumber || '',
-          employmentStatus: draft.employmentStatus || '',
           cellVerified: !!draft.cellVerified,
           peopleOnProperty: draft.peopleOnProperty ?? '',
           childrenUnder18: draft.childrenUnder18 ?? '',
@@ -269,11 +265,6 @@ export default function Apply() {
           pensionersOver60: draft.pensionersOver60 ?? '',
           waterMeterNumber: draft.waterMeterNumber || '',
           electricityMeterNumber: draft.electricityMeterNumber || '',
-          salary: draft.salary ?? '',
-          oldAgePension: draft.oldAgePension ?? '',
-          disabilityPension: draft.disabilityPension ?? '',
-          businessIncome: draft.businessIncome ?? '',
-          rentingIncome: draft.rentingIncome ?? '',
           totalIncomePerPerson: draft.totalIncomePerPerson ?? '',
           totalHouseholdIncome: draft.totalHouseholdIncome ?? '',
           ownsImmovableProperty: draft.ownsImmovableProperty === true ? 'Yes' : draft.ownsImmovableProperty === false ? 'No' : '',
@@ -714,51 +705,16 @@ export default function Apply() {
                 </>
               )}
 
-              {/* --- Employment ----------------------------------------- */}
-              <h3 className="form-subsection-title">Employment</h3>
+              {/*
+                Employment is no longer asked here.
 
-              <div className="form-group">
-                <label>Are you employed?</label>
-                {/*
-                  Asked before the employer questions, not after them.
-                  Somebody unemployed was previously asked for an employer's name,
-                  address and work telephone first, and had to work out that those
-                  did not apply to them. On a form people already find difficult,
-                  three questions that cannot be answered read as three failures.
-                */}
-                <select value={form.employmentStatus} onChange={(e) => update('employmentStatus', e.target.value)}>
-                  <option value="">Select...</option>
-                  <option value="EMPLOYED">Yes, I am employed</option>
-                  <option value="SELF_EMPLOYED">I work for myself</option>
-                  <option value="UNEMPLOYED">No, I am unemployed</option>
-                  <option value="PENSIONER">No, I am a pensioner</option>
-                  <option value="OTHER">Something else</option>
-                </select>
-              </div>
-
-              {EMPLOYER_DETAILS_NEEDED.includes(form.employmentStatus) && (
-                <>
-                  <div className="form-group">
-                    <label>{form.employmentStatus === 'SELF_EMPLOYED' ? 'Name of your business' : 'Name of employer'}</label>
-                    <input value={form.employerName} onChange={(e) => update('employerName', e.target.value)} placeholder="Employer name" />
-                  </div>
-                  <div className="form-group">
-                    <label>{form.employmentStatus === 'SELF_EMPLOYED' ? 'Business address' : "Employer's address"}</label>
-                    <input value={form.employerAddress} onChange={(e) => update('employerAddress', e.target.value)} placeholder="Employer address" />
-                  </div>
-                  <div className="form-group">
-                    <label>Work telephone number <span className="muted">(if any)</span></label>
-                    <input value={form.workTelNumber} onChange={(e) => update('workTelNumber', e.target.value)} placeholder="Work telephone" />
-                  </div>
-                </>
-              )}
-
-              {form.employmentStatus && !EMPLOYER_DETAILS_NEEDED.includes(form.employmentStatus) ? (
-                <p className="field-hint">
-                  No employer details are needed. You will be asked about any income the household receives on the next
-                  step.
-                </p>
-              ) : null}
+                It used to be a question of its own — "are you employed?" — with
+                employer details hanging off it. Both are now derived from the
+                income step: somebody with a salary is employed, somebody with a
+                business works for themselves, and the employer's name is asked
+                against the salary it pays rather than as a separate fact. Two
+                places to state whether somebody works is two places to disagree.
+              */}
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => navigate('/my-applications')}>Cancel</button>
                 <button type="button" className="btn btn-primary" onClick={() => saveStep(2)} disabled={loading}>
@@ -874,78 +830,26 @@ export default function Apply() {
           {/* STEP 3 – Household Income */}
           {step === 3 && (
             <>
-              <h2 className="form-section-title">Household Income</h2>
-              <div className="form-group">
-                <label>Salary</label>
-                <input type="number" step="0.01" min="0" value={form.salary} onChange={(e) => update('salary', e.target.value)} placeholder="R 0.00" />
-              </div>
-              <div className="form-group">
-                <label>Old Age Pension</label>
-                <input type="number" step="0.01" min="0" value={form.oldAgePension} onChange={(e) => update('oldAgePension', e.target.value)} placeholder="R 0.00" />
-              </div>
-              <div className="form-group">
-                <label>Disability Pension</label>
-                <input type="number" step="0.01" min="0" value={form.disabilityPension} onChange={(e) => update('disabilityPension', e.target.value)} placeholder="R 0.00" />
-              </div>
-              <div className="form-group">
-                <label>Business from Home Spaza/Shebeen etc</label>
-                <input type="number" step="0.01" min="0" value={form.businessIncome} onChange={(e) => update('businessIncome', e.target.value)} placeholder="R 0.00" />
-              </div>
-              <div className="form-group">
-                <label>Renting Part of House</label>
-                <input type="number" step="0.01" min="0" value={form.rentingIncome} onChange={(e) => update('rentingIncome', e.target.value)} placeholder="R 0.00" />
-              </div>
-              {/* The household total is the figure the qualifying threshold is
-                  assessed against, so it is shown live rather than only after a
-                  save — an applicant should never answer step 4's threshold
-                  question without seeing the number it refers to. */}
-              {(() => {
-                const total = ['salary', 'oldAgePension', 'disabilityPension', 'businessIncome', 'rentingIncome']
-                  .reduce((sum, k) => sum + (Number(form[k]) || 0), 0);
-                const people = Number(form.peopleOnProperty) || 0;
-                const perPerson = people > 0 ? total / people : null;
-                const anyEntered = ['salary', 'oldAgePension', 'disabilityPension', 'businessIncome', 'rentingIncome']
-                  .some((k) => form[k] !== '' && form[k] != null);
-                const money = (v) => `R ${Number(v).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`;
+              {/*
+                Income, not employment.
 
-                if (!anyEntered) return null;
-                return (
-                  <div
-                    style={{
-                      marginTop: '1.25rem', padding: '1rem',
-                      background: 'var(--gray-50)', border: '1px solid var(--gray-200)',
-                      borderRadius: 'var(--radius)',
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '1rem' }}>
-                      <span style={{ fontWeight: 600 }}>Total household income</span>
-                      <span style={{ fontSize: '1.25rem', fontWeight: 650 }}>{money(total)}</span>
-                    </div>
-                    {perPerson !== null && (
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '.35rem', fontSize: '.875rem', color: 'var(--gray-500)' }}>
-                        <span>Per person across {people} {people === 1 ? 'person' : 'people'}</span>
-                        <span>{money(perPerson)}</span>
-                      </div>
-                    )}
-                    <div style={{ marginTop: '.75rem', paddingTop: '.75rem', borderTop: '1px solid var(--gray-200)', fontSize: '.8125rem' }}>
-                      {total <= 4200 ? (
-                        <span style={{ color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: '.4rem' }}>
-                          <Icon name="check-circle" size={15} />
-                          This is at or below the R4 200 monthly threshold.
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--warning)', display: 'inline-flex', alignItems: 'flex-start', gap: '.4rem' }}>
-                          <Icon name="alert-triangle" size={15} style={{ marginTop: '.1rem' }} />
-                          <span>
-                            This is above the R4 200 monthly threshold. You may still apply — an official
-                            will assess your circumstances.
-                          </span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
+                The old step opened with five fixed amount boxes — salary, old
+                age pension, disability pension, business, renting — which could
+                hold five kinds of income and no more. A household with two
+                grants, or a pension and a lodger, had nowhere to put the second.
+                IncomeSources asks where the money comes from and takes as many
+                answers as there are.
+              */}
+              <IncomeSources
+                applicationId={applicationId}
+                people={form.peopleOnProperty}
+                onChange={(application) => {
+                  if (!application) return;
+                  update('totalHouseholdIncome', application.totalHouseholdIncome ?? '');
+                  update('totalIncomePerPerson', application.totalIncomePerPerson ?? '');
+                }}
+              />
+
               <div className="form-actions">
                 <button type="button" className="btn btn-outline" onClick={() => setStep(2)}>Back</button>
                 <button type="button" className="btn btn-primary" onClick={() => saveStep(4)} disabled={loading}>
