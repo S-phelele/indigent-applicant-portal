@@ -3,7 +3,7 @@ import Icon from './ui/Icon';
 const STEPS = [
   { num: 1, label: 'Applicant' },
   { num: 2, label: 'Property' },
-  { num: 3, label: 'Household' },
+  { num: 3, label: 'Income' },
   { num: 4, label: 'General' },
   { num: 5, label: 'Documents' },
 ];
