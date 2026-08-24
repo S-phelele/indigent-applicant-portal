@@ -99,6 +99,8 @@ const emptyForm = {
   municipalAccountNumber: '',
   eskomAccountNumber: '',
   tenure: '',
+  ownerFullName: '',
+  ownerIdNumber: '',
   applicantCategory: 'STANDARD',
   ownsOtherProperty: '',
   otherPropertyDetails: '',
@@ -138,7 +140,7 @@ function buildPayload(form, nextStep) {
     'residentialAddress', 'employerName', 'employerAddress',
     'workTelNumber', 'waterMeterNumber', 'electricityMeterNumber',
     'wardNumber', 'municipalAccountNumber', 'eskomAccountNumber',
-    'tenure', 'applicantCategory', 'otherPropertyDetails', 'incomeExclusions',
+    'tenure', 'ownerFullName', 'ownerIdNumber', 'applicantCategory', 'otherPropertyDetails', 'incomeExclusions',
     'difficultySeeing', 'difficultyHearing', 'difficultyWalking',
     'difficultyRemembering', 'difficultySelfCare', 'difficultyCommunicating',
   ];
@@ -750,6 +752,26 @@ export default function Apply() {
                     : 'This decides which proof we ask you for, so please answer it before uploading documents.'}
                 </p>
               </div>
+
+              {form.tenure === 'TENANT' || form.tenure === 'OCCUPIER' ? (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Property owner's full name</label>
+                    <input value={form.ownerFullName} onChange={(e) => update('ownerFullName', e.target.value)} required />
+                    <p className="field-hint">Since you are not the owner, we need to know who is.</p>
+                  </div>
+                  <div className="form-group">
+                    <label>Property owner's ID number <span className="optional-tag">optional</span></label>
+                    <input
+                      value={form.ownerIdNumber}
+                      onChange={(e) => update('ownerIdNumber', e.target.value)}
+                      inputMode="numeric"
+                      maxLength={13}
+                    />
+                    <p className="field-hint">Only if you know it. Leave blank if not.</p>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="form-group">
                 <label>Does anything below describe your household?</label>
