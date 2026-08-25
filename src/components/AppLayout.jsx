@@ -100,6 +100,8 @@ export default function AppLayout({ children, title, description, actions }) {
             ) : null}
             {children}
           </main>
+
+          <footer className="app-shell-footer">Powered by Malcam ICT Solutions</footer>
         </div>
 
         <ConfirmModal

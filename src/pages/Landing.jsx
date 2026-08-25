@@ -78,7 +78,10 @@ export default function Landing() {
         </div>
       </section>
 
-      <footer className="footer">Terms &amp; Conditions © 2024. All rights reserved.</footer>
+      <footer className="footer">
+        <p>Terms &amp; Conditions © 2026. All rights reserved.</p>
+        <p>Powered by Malcam ICT Solutions</p>
+      </footer>
     </div>
   );
 }
