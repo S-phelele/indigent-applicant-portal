@@ -61,10 +61,12 @@ export default function Verify() {
   };
 
   const verify = async (code) => {
-    await api.post('/auth/verify-otp', { cellNumber: user?.cellNumber, code });
-    // The route guard reads isVerified, so it has to be updated here or the
-    // redirect sends the applicant straight back to this page.
-    setUser((current) => (current ? { ...current, isVerified: true } : current));
+    const res = await api.post('/auth/verify-otp', { cellNumber: user?.cellNumber, code });
+    // Taken from what the server actually did, not assumed — a 200 here used to
+    // mean "the code was right", which is not the same thing as "an account was
+    // verified", and the gap between those two was exactly the bug that stranded
+    // people who had resent their code.
+    setUser((current) => (current ? { ...current, isVerified: Boolean(res.data?.data?.user?.isVerified) } : current));
     navigate('/dashboard', { replace: true });
   };
 
