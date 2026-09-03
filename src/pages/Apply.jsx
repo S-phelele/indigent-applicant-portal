@@ -101,6 +101,8 @@ const emptyForm = {
   tenure: '',
   ownerFullName: '',
   ownerIdNumber: '',
+  ownerRelationship: '',
+  ownerDeceased: '',
   applicantCategory: 'STANDARD',
   ownsOtherProperty: '',
   otherPropertyDetails: '',
@@ -140,7 +142,7 @@ function buildPayload(form, nextStep) {
     'residentialAddress', 'employerName', 'employerAddress',
     'workTelNumber', 'waterMeterNumber', 'electricityMeterNumber',
     'wardNumber', 'municipalAccountNumber', 'eskomAccountNumber',
-    'tenure', 'ownerFullName', 'ownerIdNumber', 'applicantCategory', 'otherPropertyDetails', 'incomeExclusions',
+    'tenure', 'ownerFullName', 'ownerIdNumber', 'ownerRelationship', 'applicantCategory', 'otherPropertyDetails', 'incomeExclusions',
     'difficultySeeing', 'difficultyHearing', 'difficultyWalking',
     'difficultyRemembering', 'difficultySelfCare', 'difficultyCommunicating',
   ];
@@ -210,7 +212,7 @@ function buildPayload(form, nextStep) {
   // Yes/No questions
   const boolFields = [
     'ownsImmovableProperty', 'isFullTimeOccupant', 'incomeBelowThreshold',
-    'hasMunicipalArrears', 'hasArrearsArrangement', 'ownsOtherProperty',
+    'hasMunicipalArrears', 'hasArrearsArrangement', 'ownsOtherProperty', 'ownerDeceased',
   ];
   boolFields.forEach((key) => {
     const b = toBool(form[key]);
@@ -252,16 +254,19 @@ export default function Apply() {
           ...emptyForm,
           title: draft.title || '',
           maritalStatus: draft.maritalStatus || '',
-          surname: draft.surname || '',
-          fullName: draft.fullName || draft.names || '',
-          idNumber: draft.idNumber || '',
+          // Falls back to the account for a draft that predates the server
+          // seeding these from it at creation, so an old draft is never stuck
+          // blank on fields the applicant already gave at registration.
+          surname: draft.surname || user?.lastName || '',
+          fullName: draft.fullName || draft.names || user?.firstName || '',
+          idNumber: draft.idNumber || user?.idNumber || '',
           // Falls back to the ID number for drafts started before sex was asked
           // explicitly, so an old draft opens with the field already answered.
-          sex: draft.sex || sexFromIdNumber(draft.idNumber) || '',
+          sex: draft.sex || sexFromIdNumber(draft.idNumber || user?.idNumber) || '',
           // A stored answer counts as chosen, so correcting the ID number later
           // does not quietly overwrite it.
           sexTouched: Boolean(draft.sex),
-          cellNumber: draft.cellNumber || '',
+          cellNumber: draft.cellNumber || user?.cellNumber || '',
           residentialAddress: draft.residentialAddress || '',
           addressLatitude: draft.addressLatitude ?? '',
           addressLongitude: draft.addressLongitude ?? '',
@@ -277,6 +282,21 @@ export default function Apply() {
           employerName: draft.employerName || '',
           employerAddress: draft.employerAddress || '',
           workTelNumber: draft.workTelNumber || '',
+          // Property Particulars — previously missing here, so a draft that had
+          // this step filled in showed it as blank on every reload, and saving
+          // again from the wizard could not tell it was already answered.
+          wardNumber: draft.wardNumber || '',
+          municipalAccountNumber: draft.municipalAccountNumber || '',
+          eskomAccountNumber: draft.eskomAccountNumber || '',
+          tenure: draft.tenure || '',
+          ownerFullName: draft.ownerFullName || '',
+          ownerIdNumber: draft.ownerIdNumber || '',
+          ownerRelationship: draft.ownerRelationship || '',
+          ownerDeceased: draft.ownerDeceased === true ? 'Yes' : draft.ownerDeceased === false ? 'No' : '',
+          applicantCategory: draft.applicantCategory || 'STANDARD',
+          ownsOtherProperty: draft.ownsOtherProperty === true ? 'Yes' : draft.ownsOtherProperty === false ? 'No' : '',
+          otherPropertyDetails: draft.otherPropertyDetails || '',
+          incomeExclusions: draft.incomeExclusions || '',
           peopleOnProperty: draft.peopleOnProperty ?? '',
           childrenUnder18: draft.childrenUnder18 ?? '',
           adults: draft.adults ?? '',
@@ -769,6 +789,27 @@ export default function Apply() {
                       maxLength={13}
                     />
                     <p className="field-hint">Only if you know it. Leave blank if not.</p>
+                  </div>
+                </div>
+              ) : null}
+
+              {form.tenure === 'TENANT' || form.tenure === 'OCCUPIER' ? (
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>Your relationship to the owner <span className="optional-tag">optional</span></label>
+                    <input
+                      value={form.ownerRelationship}
+                      onChange={(e) => update('ownerRelationship', e.target.value)}
+                      placeholder="e.g. Landlord, my mother, my employer"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>Has the owner passed away? <span className="optional-tag">optional</span></label>
+                    <select value={form.ownerDeceased} onChange={(e) => update('ownerDeceased', e.target.value)}>
+                      <option value="">Not sure / prefer not to say</option>
+                      <option value="No">No, they are alive</option>
+                      <option value="Yes">Yes, they have passed away</option>
+                    </select>
                   </div>
                 </div>
               ) : null}
